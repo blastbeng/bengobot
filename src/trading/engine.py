@@ -63,10 +63,11 @@ class TradingEngine:
         self.notifier = notifier
 
     def _restore_paper_state(self):
-        """Replay trade history to restore paper simulator balances."""
+        """Replay trade history to restore paper simulator balances and positions with cost basis."""
         # Reset simulator to initial state
         self.trader.balances = {self.base_currency: self.initial_balance}
         self.trader.trades = []
+        positions = {}
         for trade in self.trade_history:
             symbol = trade['symbol']
             side = trade['side']
@@ -74,20 +75,47 @@ class TradingEngine:
             price = trade['price']
             cost = trade['cost']
             fee = trade.get('fee', {})
-            fee_cost = fee.get('cost', 0)
+            fee_cost = float(fee.get('cost', 0) or 0)
             fee_currency = fee.get('currency', '')
             base, quote = symbol.split('/')
+
             if side == 'buy':
-                # Deduct quote, add base minus fee
+                # Update balances
                 self.trader.balances[quote] = self.trader.balances.get(quote, 0) - cost
-                net_base = amount - fee_cost if fee_currency == base else amount
+                net_base = amount - (fee_cost if fee_currency == base else 0.0)
                 self.trader.balances[base] = self.trader.balances.get(base, 0) + net_base
+
+                # Update position
+                if symbol in positions:
+                    pos = positions[symbol]
+                    pos['cost_basis'] += cost
+                    pos['net_base'] += net_base
+                    pos['amount'] += amount
+                    pos['price'] = pos['cost_basis'] / pos['net_base'] if pos['net_base'] else price
+                else:
+                    entry_price = cost / net_base if net_base else price
+                    positions[symbol] = {
+                        'symbol': symbol,
+                        'side': 'buy',
+                        'amount': amount,
+                        'price': entry_price,
+                        'cost_basis': cost,
+                        'net_base': net_base,
+                        'timestamp': trade['timestamp'],
+                        'stop_loss': entry_price * (1 - STOP_LOSS_PCT),
+                        'take_profit': entry_price * (1 + TAKE_PROFIT_PCT),
+                    }
             elif side == 'sell':
-                # Deduct base, add quote minus fee
+                # Update balances
                 self.trader.balances[base] = self.trader.balances.get(base, 0) - amount
-                net_quote = cost - fee_cost if fee_currency == quote else cost
+                net_quote = cost - (fee_cost if fee_currency == quote else 0.0)
                 self.trader.balances[quote] = self.trader.balances.get(quote, 0) + net_quote
+                # Remove position
+                positions.pop(symbol, None)
+
             self.trader.trades.append(trade)
+
+        self.positions = positions
 
     def _load_state(self):
         """Load current coins, positions, trade history, and initial balance from SQLite."""
