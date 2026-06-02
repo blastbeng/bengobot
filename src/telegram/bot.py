@@ -98,12 +98,19 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=self.keyboard)
 
     async def cmd_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        summary = await asyncio.to_thread(self.engine.get_profit_summary)
-        msg = f"*Profit Summary:*\n"
-        msg += f"Initial Balance: {summary['initial_balance']:.2f}\n"
-        msg += f"Current Balance: {summary['current_balance']:.2f}\n"
-        msg += f"Open Positions Value: {summary['open_value']:.2f}\n"
-        msg += f"Total P&L: {summary['total_pnl']:.2f} ({summary['pnl_percent']:.2f}%)\n"
+        try:
+            summary = await asyncio.to_thread(self.engine.get_profit_summary)
+            msg = (
+                f"*Profit Summary:*\n"
+                f"Initial Balance: {summary['initial_balance']:.2f}\n"
+                f"Current Balance: {summary['current_balance']:.2f}\n"
+                f"Open Positions Value: {summary['open_value']:.2f}\n"
+                f"Total P&L: {summary['total_pnl']:.2f} ({summary['pnl_percent']:.2f}%)\n"
+            )
+        except Exception as e:
+            logger.error(f"Failed to get profit summary: {e}", exc_info=True)
+            msg = "⚠️ Could not retrieve profit summary. Please try again later."
+
         await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=self.keyboard)
 
     async def send_notification(self, message: str):
