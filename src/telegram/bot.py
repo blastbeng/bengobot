@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from src.config.settings import settings
 from src.trading.engine import TradingEngine
 from src.utils.redis_client import get_redis_client
@@ -14,19 +14,48 @@ class TelegramBot:
         self.redis = get_redis_client()
         self.app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
         self._register_handlers()
+        self.keyboard = ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
+                [KeyboardButton("💰 Profit"), KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
+            ],
+            resize_keyboard=True,
+            persistent=True,
+        )
 
     def _register_handlers(self):
         self.app.add_handler(CommandHandler("start", self.cmd_start))
+        self.app.add_handler(CommandHandler("menu", self.cmd_menu))
         self.app.add_handler(CommandHandler("pause", self.cmd_pause))
         self.app.add_handler(CommandHandler("resume", self.cmd_resume))
         self.app.add_handler(CommandHandler("status", self.cmd_status))
         self.app.add_handler(CommandHandler("trades", self.cmd_trades))
         self.app.add_handler(CommandHandler("profit", self.cmd_profit))
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_button))
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         await asyncio.to_thread(self.redis.set, "telegram:chat_id", chat_id)
-        await update.message.reply_text("Bot started! You will receive trade notifications here.")
+        await update.message.reply_text(
+            "Bot started! You will receive trade notifications here.\nUse the buttons below or type /menu to see them again.",
+            reply_markup=self.keyboard,
+        )
+
+    async def cmd_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Choose an option:", reply_markup=self.keyboard)
+
+    async def handle_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        if text == "📊 Status":
+            await self.cmd_status(update, context)
+        elif text == "📈 Trades":
+            await self.cmd_trades(update, context)
+        elif text == "💰 Profit":
+            await self.cmd_profit(update, context)
+        elif text == "⏸️ Pause":
+            await self.cmd_pause(update, context)
+        elif text == "▶️ Resume":
+            await self.cmd_resume(update, context)
 
     async def cmd_pause(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.to_thread(self.redis.set, "trading:paused", "1")
