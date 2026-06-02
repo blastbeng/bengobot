@@ -1,5 +1,5 @@
 import json
-from .base import Signal
+from .base import Signal, LLMStrategy
 
 
 def parse_llm_response(response_text: str) -> Signal:
@@ -29,3 +29,11 @@ def parse_llm_response(response_text: str) -> Signal:
         )
     except (json.JSONDecodeError, ValueError, TypeError):
         return Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response")
+
+
+def create_strategy_from_llm(response_text: str) -> LLMStrategy:
+    """
+    Parse the LLM response and return an LLMStrategy instance.
+    """
+    signal = parse_llm_response(response_text)
+    return LLMStrategy(signal)
