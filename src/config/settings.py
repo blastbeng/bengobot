@@ -32,6 +32,16 @@ class Settings(BaseSettings):
             raise ValueError("MAX_COINS must be at least 1")
         return v
 
+    # Paper trading
+    PAPER_INITIAL_BALANCE: float = 10000.0
+
+    @field_validator("PAPER_INITIAL_BALANCE")
+    @classmethod
+    def validate_paper_initial_balance(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("PAPER_INITIAL_BALANCE must be positive")
+        return v
+
     @model_validator(mode="after")
     def check_live_credentials(self):
         if self.TRADING_MODE == "live":

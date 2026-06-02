@@ -40,7 +40,7 @@ class TradingEngine:
             self.trader = PaperSimulator(
                 self.exchange,
                 base_currency=self.base_currency,
-                initial_balance=10000.0,
+                initial_balance=settings.PAPER_INITIAL_BALANCE,
             )
         else:
             self.trader = LiveTrader(self.exchange)
@@ -109,8 +109,12 @@ class TradingEngine:
         if init_bal:
             self.initial_balance = float(init_bal)
         else:
-            balance = self.trader.fetch_balance()
-            self.initial_balance = balance.get(self.base_currency, 0.0)
+            # Use the configured initial balance for paper mode
+            if settings.TRADING_MODE == "paper":
+                self.initial_balance = settings.PAPER_INITIAL_BALANCE
+            else:
+                balance = self.trader.fetch_balance()
+                self.initial_balance = balance.get(self.base_currency, 0.0)
             self.redis.set("trading:initial_balance", self.initial_balance)
 
     async def _save_state(self):
