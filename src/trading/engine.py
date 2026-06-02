@@ -311,6 +311,7 @@ class TradingEngine:
                     continue
 
                 await self._reevaluate_coins()
+                await self._close_removed_positions()
                 for symbol in self.current_coins:
                     await self._process_coin(symbol)
                 await self._check_risk_management()
@@ -414,6 +415,18 @@ class TradingEngine:
             )
 
         await asyncio.to_thread(self.redis.set, last_key, now)
+
+    async def _close_removed_positions(self):
+        """Close positions for coins that are no longer in the current selection."""
+        removed = [sym for sym in self.positions if sym not in self.current_coins]
+        for sym in removed:
+            logger.info(f"Closing position for {sym} as it was removed from coin selection.")
+            if self.notifier:
+                await self.notifier.send_notification(
+                    f"🔻 Closing position for {sym} (removed from selection)."
+                )
+            signal = Signal(action="SELL", confidence=1.0, reasoning="Coin removed from selection")
+            await self._execute_signal(sym, signal)
 
     async def _process_coin(self, symbol: str):
         """Fetch market data, get LLM strategy, validate, and execute."""
