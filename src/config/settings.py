@@ -1,3 +1,4 @@
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -16,6 +17,29 @@ class Settings(BaseSettings):
 
     # Max coins to trade
     MAX_COINS: int = 10
+
+    @field_validator("TRADING_MODE")
+    @classmethod
+    def validate_trading_mode(cls, v: str) -> str:
+        if v not in ("paper", "live"):
+            raise ValueError("TRADING_MODE must be 'paper' or 'live'")
+        return v
+
+    @field_validator("MAX_COINS")
+    @classmethod
+    def validate_max_coins(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("MAX_COINS must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def check_live_credentials(self):
+        if self.TRADING_MODE == "live":
+            if not self.EXCHANGE_API_KEY or not self.EXCHANGE_SECRET:
+                raise ValueError(
+                    "EXCHANGE_API_KEY and EXCHANGE_SECRET are required when TRADING_MODE='live'"
+                )
+        return self
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
