@@ -430,13 +430,7 @@ class TradingEngine:
             # Determine the amount of base currency to sell
             pos = self.positions.get(symbol)
             if pos:
-                # For paper trading, convert net position amount back to gross
-                # so the simulator can deduct the correct gross amount and apply fees.
-                if settings.TRADING_MODE == "paper":
-                    fee_rate = self.trader.fee_rate
-                    gross_amount = pos["amount"] / (1 - fee_rate)
-                else:
-                    gross_amount = pos["amount"]
+                gross_amount = pos["amount"]
             else:
                 gross_amount = balance.get(base, 0.0)
             if gross_amount <= 0:
