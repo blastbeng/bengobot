@@ -73,56 +73,82 @@ class TelegramBot:
             balance = self.engine.trader.fetch_balance()
             return coins, positions, balance
         coins, positions, balance = await asyncio.to_thread(get_status)
-        msg = f"*Current Coins:* {', '.join(coins) if coins else 'None'}\n"
-        msg += f"*Positions:*\n"
-        for sym, pos in positions.items():
-            msg += f"  {sym}: {pos['amount']} @ {pos['price']}\n"
-        msg += f"*Balances:*\n"
-        for cur, amt in balance.items():
-            if amt > 0:
-                msg += f"  {cur}: {amt}\n"
-        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=self.keyboard)
+
+        msg = "<b>📊 Current Status</b>\n\n"
+        msg += f"<b>🪙 Tracked Coins:</b> {', '.join(coins) if coins else 'None'}\n\n"
+
+        if positions:
+            msg += "<b>📈 Open Positions:</b>\n"
+            for sym, pos in positions.items():
+                msg += (
+                    f"  • <code>{sym}</code>\n"
+                    f"    Amount: {pos['amount']:.6f}\n"
+                    f"    Entry: {pos['price']:.4f}\n"
+                    f"    SL: {pos['stop_loss']:.4f}  TP: {pos['take_profit']:.4f}\n"
+                )
+        else:
+            msg += "<b>📈 Open Positions:</b> None\n"
+
+        msg += "\n<b>💰 Balances:</b>\n"
+        non_zero = {k: v for k, v in balance.items() if v > 0}
+        if non_zero:
+            for cur, amt in non_zero.items():
+                msg += f"  • {cur}: {amt:.6f}\n"
+        else:
+            msg += "  No balances\n"
+
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         trades = await asyncio.to_thread(lambda: self.engine.trade_history[-10:])
         if not trades:
-            await update.message.reply_text("No trades yet.")
+            await update.message.reply_text("No trades yet.", reply_markup=self.keyboard)
             return
-        msg = "*Recent Trades:*\n"
+
+        msg = "<b>📜 Recent Trades (last 10)</b>\n\n"
         for t in trades:
             side = t['side'].upper()
             sym = t['symbol']
             amt = t['amount']
             price = t['price']
             fee = t.get('fee', {})
-            fee_str = ""
-            if fee:
-                fee_cost = fee.get('cost', 0)
-                fee_currency = fee.get('currency', '')
-                fee_str = f" (fee: {fee_cost:.6f} {fee_currency})"
-            pnl_str = ""
+            fee_cost = fee.get('cost', 0) or 0
+            fee_currency = fee.get('currency', '')
+            fee_str = f"{fee_cost:.6f} {fee_currency}" if fee_cost else "—"
+
+            emoji = "🟢" if side == "BUY" else "🔴"
+            line = f"{emoji} <b>{side}</b> <code>{sym}</code>\n"
+            line += f"   Amount: {amt:.6f}  Price: {price:.4f}\n"
+            line += f"   Fee: {fee_str}"
+
             if t['side'] == 'sell' and 'realized_pnl' in t:
                 pnl = t['realized_pnl']
-                pnl_str = f" | P&L: {pnl:+.4f}"
-            msg += f"  {side} {sym} {amt:.6f} @ {price:.4f}{fee_str}{pnl_str}\n"
-        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=self.keyboard)
+                pnl_sign = "+" if pnl >= 0 else ""
+                line += f"  P&L: {pnl_sign}{pnl:.4f}"
+
+            msg += line + "\n\n"
+
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             summary = await asyncio.to_thread(self.engine.get_profit_summary)
-            msg = (
-                f"*Profit Summary:*\n"
-                f"Initial Balance: {summary['initial_balance']:.2f}\n"
-                f"Current Balance: {summary['current_balance']:.2f}\n"
-                f"Open Positions Value: {summary['open_value']:.2f}\n"
-                f"Fees Paid: {summary['total_fees']:.2f}\n"
-                f"Total P&L: {summary['total_pnl']:.2f} ({summary['pnl_percent']:.2f}%)\n"
-            )
+            pnl = summary['total_pnl']
+            pnl_pct = summary['pnl_percent']
+            pnl_emoji = "📈" if pnl >= 0 else "📉"
+            pnl_sign = "+" if pnl >= 0 else ""
+
+            msg = "<b>💰 Profit Summary</b>\n\n"
+            msg += f"💵 Initial Balance:  {summary['initial_balance']:,.2f}\n"
+            msg += f"🏦 Current Balance:  {summary['current_balance']:,.2f}\n"
+            msg += f"📊 Open Positions:   {summary['open_value']:,.2f}\n"
+            msg += f"🧾 Fees Paid:        {summary['total_fees']:,.2f}\n"
+            msg += f"{pnl_emoji} Total P&L:         {pnl_sign}{pnl:,.2f}  ({pnl_sign}{pnl_pct:.2f}%)\n"
         except Exception as e:
             logger.error(f"Failed to get profit summary: {e}", exc_info=True)
             msg = "⚠️ Could not retrieve profit summary. Please try again later."
 
-        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=self.keyboard)
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def send_notification(self, message: str):
         """Send a notification to the stored chat ID."""
