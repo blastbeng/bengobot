@@ -15,6 +15,7 @@ from src.llm.prompts import (
     build_coin_selection_prompt,
     build_strategy_prompt,
 )
+from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm
 from src.strategies.validator import validate_signal
 from src.utils.redis_client import get_redis_client
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 COIN_REVALUATION_INTERVAL = 300  # seconds (5 minutes)
 STRATEGY_INTERVAL = 60           # seconds (1 minute)
 POSITION_SIZE_FRACTION = 0.1     # fraction of base currency balance per trade
+STOP_LOSS_PCT = 0.05            # 5% below entry price
+TAKE_PROFIT_PCT = 0.10          # 10% above entry price
 
 
 class TradingEngine:
@@ -54,6 +57,12 @@ class TradingEngine:
         positions_json = self.redis.get("trading:positions")
         if positions_json:
             self.positions = json.loads(positions_json)
+            # Ensure risk fields exist (for backward compatibility)
+            for pos in self.positions.values():
+                if "stop_loss" not in pos:
+                    pos["stop_loss"] = pos["price"] * (1 - STOP_LOSS_PCT)
+                if "take_profit" not in pos:
+                    pos["take_profit"] = pos["price"] * (1 + TAKE_PROFIT_PCT)
 
     def _save_state(self):
         """Persist current coins and positions to Redis."""
@@ -68,6 +77,7 @@ class TradingEngine:
                 await self._reevaluate_coins()
                 for symbol in self.current_coins:
                     await self._process_coin(symbol)
+                await self._check_risk_management()
                 self._save_state()
             except Exception as e:
                 logger.error(f"Engine loop error: {e}", exc_info=True)
@@ -138,6 +148,21 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
 
+    async def _check_risk_management(self):
+        """Check open positions and close if stop-loss or take-profit is hit."""
+        for symbol, pos in list(self.positions.items()):
+            try:
+                ticker = self.exchange.fetch_ticker(symbol)
+                current_price = ticker['last']
+                if current_price <= pos["stop_loss"]:
+                    logger.info(f"Stop-loss triggered for {symbol} at {current_price}")
+                    await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Stop-loss"))
+                elif current_price >= pos["take_profit"]:
+                    logger.info(f"Take-profit triggered for {symbol} at {current_price}")
+                    await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Take-profit"))
+            except Exception as e:
+                logger.error(f"Risk check failed for {symbol}: {e}")
+
     async def _execute_signal(self, symbol: str, signal):
         """Execute a BUY or SELL signal."""
         base, quote = symbol.split("/")
@@ -154,12 +179,15 @@ class TradingEngine:
                 order = self.trader.create_market_buy_order(symbol, amount)
                 logger.info(f"BUY {symbol}: {order}")
                 # Record position
+                entry_price = order["price"]
                 self.positions[symbol] = {
                     "symbol": symbol,
                     "side": "buy",
                     "amount": order["amount"],
-                    "price": order["price"],
+                    "price": entry_price,
                     "timestamp": order["timestamp"],
+                    "stop_loss": entry_price * (1 - STOP_LOSS_PCT),
+                    "take_profit": entry_price * (1 + TAKE_PROFIT_PCT),
                 }
             except Exception as e:
                 logger.error(f"Buy order failed for {symbol}: {e}")
