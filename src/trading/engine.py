@@ -329,6 +329,10 @@ class TradingEngine:
                 open_value += pos['amount'] * price
             except Exception:
                 pass
+        total_fees = sum(
+            float(t.get('fee', {}).get('cost', 0) or 0)
+            for t in self.trade_history
+        )
         total_value = current_balance + open_value
         pnl = total_value - self.initial_balance
         pnl_percent = (pnl / self.initial_balance * 100) if self.initial_balance else 0.0
@@ -338,6 +342,7 @@ class TradingEngine:
             "open_value": open_value,
             "total_pnl": pnl,
             "pnl_percent": pnl_percent,
+            "total_fees": total_fees,
         }
 
     async def _check_risk_management(self):

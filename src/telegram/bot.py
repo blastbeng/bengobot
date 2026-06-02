@@ -115,6 +115,7 @@ class TelegramBot:
                 f"Initial Balance: {summary['initial_balance']:.2f}\n"
                 f"Current Balance: {summary['current_balance']:.2f}\n"
                 f"Open Positions Value: {summary['open_value']:.2f}\n"
+                f"Fees Paid: {summary['total_fees']:.2f}\n"
                 f"Total P&L: {summary['total_pnl']:.2f} ({summary['pnl_percent']:.2f}%)\n"
             )
         except Exception as e:

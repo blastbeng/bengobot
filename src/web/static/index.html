@@ -277,6 +277,7 @@
                     Initial: ${p.initial_balance?.toFixed(2)}<br>
                     Current: ${p.current_balance?.toFixed(2)}<br>
                     Open Value: ${p.open_value?.toFixed(2)}<br>
+                    Fees Paid: ${p.total_fees?.toFixed(2)}<br>
                     P&L: <span class="${p.total_pnl >= 0 ? 'green' : 'red'}">${p.total_pnl?.toFixed(2)} (${p.pnl_percent?.toFixed(2)}%)</span>
                 `;
             }
