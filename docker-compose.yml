@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    restart: no
     ports:
-      - "6379:6379"
+      - "63795:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -16,7 +14,7 @@ services:
 
   bot:
     build: .
-    restart: unless-stopped
+    restart: no
     ports:
       - "8083:8083"
     env_file:
