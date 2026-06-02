@@ -64,7 +64,9 @@ def build_strategy_prompt(
     ticker: Dict[str, Any],
     order_book: Dict[str, Any],
     balance: Dict[str, float],
-    open_positions: List[Dict[str, Any]]
+    open_positions: List[Dict[str, Any]],
+    per_coin_budget: float,
+    max_coins: int
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -72,6 +74,8 @@ Current ticker: {json.dumps(ticker)}
 Order book (top 5 levels): {json.dumps(order_book)}
 Current balances: {json.dumps(balance)}
 Open positions: {json.dumps(open_positions)}
+Per-coin budget (balance / max_coins): {per_coin_budget:.2f} {symbol.split('/')[1]}
+Maximum coins to trade: {max_coins}
 
-Based on the above, decide whether to BUY, SELL, or HOLD. Provide a strategy if action is BUY or SELL. Return a JSON object as specified."""
+Based on the above, decide whether to BUY, SELL, or HOLD. Consider the per-coin budget: only BUY if the budget is sufficient to meet the minimum trade size and the position size is meaningful. If the budget is too small, prefer HOLD. Provide a strategy if action is BUY or SELL. Return a JSON object as specified."""
     return prompt

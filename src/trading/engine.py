@@ -217,12 +217,18 @@ class TradingEngine:
                 pos for pos in self.positions.values() if pos.get("symbol") == symbol
             ]
 
+            # Compute per-coin budget for this coin
+            base_balance = balance.get(self.base_currency, 0.0)
+            per_coin_budget = base_balance / self.max_coins if self.max_coins > 0 else 0.0
+
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
                 order_book=order_book,
                 balance=balance,
                 open_positions=open_positions,
+                per_coin_budget=per_coin_budget,
+                max_coins=self.max_coins,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
@@ -286,9 +292,10 @@ class TradingEngine:
         balance = await asyncio.to_thread(self.trader.fetch_balance)
 
         if signal.action == "BUY":
-            # Use a fraction of available quote balance
+            # Use per-coin budget as the buy amount, capped at available balance
             quote_balance = balance.get(quote, 0.0)
-            amount = quote_balance * POSITION_SIZE_FRACTION
+            per_coin_budget = quote_balance / self.max_coins if self.max_coins > 0 else 0.0
+            amount = min(per_coin_budget, quote_balance)
             if amount <= 0:
                 logger.info(f"Insufficient {quote} to buy {symbol}")
                 return
