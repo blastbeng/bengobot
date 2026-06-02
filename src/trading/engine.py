@@ -204,6 +204,8 @@ class TradingEngine:
                     )
         except json.JSONDecodeError:
             logger.error("Failed to parse coin selection response.")
+            if self.notifier:
+                await self.notifier.send_notification("❌ Failed to parse coin selection response.")
 
         await asyncio.to_thread(self.redis.set, last_key, now)
 
@@ -235,10 +237,21 @@ class TradingEngine:
             signal = strategy.generate_signal({})
             validated = validate_signal(signal)
 
+            # Log and notify the decision
+            logger.info(f"Decision for {symbol}: {validated.action} (confidence: {validated.confidence:.2f})")
+            if self.notifier:
+                emoji = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⏸️"}.get(validated.action, "❓")
+                await self.notifier.send_notification(
+                    f"{emoji} {symbol}: {validated.action} "
+                    f"(confidence: {validated.confidence:.2f}) – {validated.reasoning}"
+                )
+
             if validated.action != "HOLD":
                 await self._execute_signal(symbol, validated)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
+            if self.notifier:
+                await self.notifier.send_notification(f"❌ Error processing {symbol}: {e}")
 
     def get_profit_summary(self) -> Dict[str, float]:
         """Return profit/loss summary."""
@@ -298,6 +311,8 @@ class TradingEngine:
             amount = min(per_coin_budget, quote_balance)
             if amount <= 0:
                 logger.info(f"Insufficient {quote} to buy {symbol}")
+                if self.notifier:
+                    await self.notifier.send_notification(f"⚠️ Insufficient {quote} to buy {symbol}")
                 return
             try:
                 order = await asyncio.to_thread(self.trader.create_market_buy_order, symbol, amount)
@@ -332,6 +347,8 @@ class TradingEngine:
                     )
             except Exception as e:
                 logger.error(f"Buy order failed for {symbol}: {e}")
+                if self.notifier:
+                    await self.notifier.send_notification(f"❌ Buy order failed for {symbol}: {e}")
 
         elif signal.action == "SELL":
             # Sell the exact position amount if we have one, otherwise sell all base balance
@@ -342,6 +359,8 @@ class TradingEngine:
                 sell_amount = balance.get(base, 0.0)
             if sell_amount <= 0:
                 logger.info(f"No {base} to sell for {symbol}")
+                if self.notifier:
+                    await self.notifier.send_notification(f"⚠️ No {base} to sell for {symbol}")
                 return
             try:
                 order = await asyncio.to_thread(self.trader.create_market_sell_order, symbol, sell_amount)
@@ -356,3 +375,5 @@ class TradingEngine:
                     )
             except Exception as e:
                 logger.error(f"Sell order failed for {symbol}: {e}")
+                if self.notifier:
+                    await self.notifier.send_notification(f"❌ Sell order failed for {symbol}: {e}")
