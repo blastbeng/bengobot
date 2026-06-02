@@ -14,6 +14,10 @@ async def main():
     engine = TradingEngine()
     # Start engine as a background task
     asyncio.create_task(engine.run())
+    if settings.TELEGRAM_BOT_TOKEN:
+        from src.telegram.bot import TelegramBot
+        telegram_bot = TelegramBot(engine)
+        asyncio.create_task(telegram_bot.run())
     # Run the web server
     config = uvicorn.Config(
         app,
