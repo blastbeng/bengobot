@@ -1,6 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
+    container_name: bengoredis
     restart: no
     ports:
       - "63795:6379"
@@ -14,6 +15,7 @@ services:
 
   bot:
     build: .
+    container_name: bengobot
     restart: no
     ports:
       - "8083:8083"
