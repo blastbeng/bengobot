@@ -51,6 +51,8 @@ class TradingEngine:
         self.initial_balance: float = 0.0
         self.notifier = None
         self._load_state()
+        # Ensure trading is not paused on startup
+        self.redis.delete("trading:paused")
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
