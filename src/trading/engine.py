@@ -427,19 +427,25 @@ class TradingEngine:
                     await self.notifier.send_notification(f"❌ Buy order failed for {symbol}: {e}")
 
         elif signal.action == "SELL":
-            # Sell the exact position amount if we have one, otherwise sell all base balance
+            # Determine the amount of base currency to sell
             pos = self.positions.get(symbol)
             if pos:
-                sell_amount = pos["amount"]
+                # For paper trading, convert net position amount back to gross
+                # so the simulator can deduct the correct gross amount and apply fees.
+                if settings.TRADING_MODE == "paper":
+                    fee_rate = self.trader.fee_rate
+                    gross_amount = pos["amount"] / (1 - fee_rate)
+                else:
+                    gross_amount = pos["amount"]
             else:
-                sell_amount = balance.get(base, 0.0)
-            if sell_amount <= 0:
+                gross_amount = balance.get(base, 0.0)
+            if gross_amount <= 0:
                 logger.info(f"No {base} to sell for {symbol}")
                 if self.notifier:
                     await self.notifier.send_notification(f"⚠️ No {base} to sell for {symbol}")
                 return
             try:
-                order = await asyncio.to_thread(self.trader.create_market_sell_order, symbol, sell_amount)
+                order = await asyncio.to_thread(self.trader.create_market_sell_order, symbol, gross_amount)
                 logger.info(f"SELL {symbol}: {order}")
                 # Compute realized P&L
                 fee = order.get('fee', {})
