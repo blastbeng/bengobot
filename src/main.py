@@ -54,7 +54,7 @@ async def main():
 
         # Initialize the bot so we can send a startup message immediately
         await telegram_bot.initialize()
-        await telegram_bot.send_notification("🤖 Bot started! Use the buttons below to control me.")
+        await telegram_bot.send_notification("🤖 Bengobot started! Use the buttons below to control me.")
 
         # Start polling in the background
         asyncio.create_task(telegram_bot.run())
