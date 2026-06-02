@@ -126,6 +126,77 @@ class TradingEngine:
                 pos['cost_basis'] = pos['amount'] * pos['price']
                 pos['net_base'] = pos['amount']
 
+    async def _reconcile_positions(self):
+        """Detect and handle external changes: delisted coins, externally sold positions."""
+        # --- Delisted coins ---
+        available_pairs = await asyncio.to_thread(get_available_pairs, self.exchange, self.base_currency)
+        for coin in list(self.current_coins):
+            if coin not in available_pairs:
+                logger.warning(f"Coin {coin} no longer available. Removing from tracking.")
+                self.current_coins.remove(coin)
+                if coin in self.positions:
+                    pos = self.positions.pop(coin)
+                    trade = {
+                        "symbol": coin,
+                        "side": "sell",
+                        "amount": pos["amount"],
+                        "price": 0.0,
+                        "cost": 0.0,
+                        "fee": {"cost": 0.0, "currency": self.base_currency},
+                        "timestamp": time.time(),
+                        "note": "delisted"
+                    }
+                    self.trade_history.append(trade)
+                    logger.warning(f"Delisted coin {coin}: recorded forced sell of {pos['amount']} at 0.")
+
+        # --- Externally modified balances ---
+        for symbol, pos in list(self.positions.items()):
+            base = symbol.split('/')[0]
+            try:
+                actual_balance = await asyncio.to_thread(self.trader.get_balance, base)
+            except Exception as e:
+                logger.error(f"Failed to fetch balance for {base}: {e}")
+                continue
+
+            recorded_amount = pos.get("amount", 0.0)
+            if actual_balance < recorded_amount - 1e-8:
+                # External sell detected
+                sold_amount = recorded_amount - actual_balance
+                try:
+                    ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+                    current_price = ticker['last']
+                except Exception:
+                    current_price = pos.get("price", 0.0)  # fallback to entry price
+                cost = sold_amount * current_price
+                fee_rate = 0.001  # assume 0.1% fee
+                fee_cost = cost * fee_rate
+                trade = {
+                    "symbol": symbol,
+                    "side": "sell",
+                    "amount": sold_amount,
+                    "price": current_price,
+                    "cost": cost,
+                    "fee": {"cost": fee_cost, "currency": self.base_currency},
+                    "timestamp": time.time(),
+                    "note": "external_sell"
+                }
+                self.trade_history.append(trade)
+                logger.warning(
+                    f"External sell detected for {symbol}: {sold_amount} sold at ~{current_price}. "
+                    f"Updating position from {recorded_amount} to {actual_balance}."
+                )
+                if actual_balance == 0.0:
+                    del self.positions[symbol]
+                else:
+                    self.positions[symbol]["amount"] = actual_balance
+            elif actual_balance > recorded_amount + 1e-8:
+                # External deposit – sync to actual balance
+                logger.warning(
+                    f"Balance of {base} increased externally from {recorded_amount} to {actual_balance}. "
+                    f"Updating position."
+                )
+                self.positions[symbol]["amount"] = actual_balance
+
     def _load_state(self):
         """Load current coins, positions, trade history, and initial balance from SQLite."""
         state = load_trading_state()
@@ -165,6 +236,7 @@ class TradingEngine:
         logger.info("Trading engine started.")
         while True:
             try:
+                await self._reconcile_positions()
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                 if paused:
                     await asyncio.sleep(STRATEGY_INTERVAL)
