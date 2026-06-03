@@ -21,7 +21,7 @@ from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm
 from src.strategies.validator import validate_signal
 from src.utils.redis_client import get_redis_client
-from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade
+from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance
 
 logger = logging.getLogger(__name__)
 
@@ -741,6 +741,10 @@ class TradingEngine:
             "losses": losses,
             "win_rate": round(win_rate, 4),
         }
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Return performance summary grouped by coin and timeframe from trade_history table."""
+        return get_performance()
 
     async def _check_risk_management(self):
         """Check open positions and close if stop-loss, take-profit, or trailing stop is hit."""
