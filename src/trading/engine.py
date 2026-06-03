@@ -16,6 +16,9 @@ from src.llm.prompts import (
     build_coin_selection_prompt,
     build_strategy_prompt,
     compute_atr,
+    compute_rsi,
+    compute_macd,
+    compute_bollinger_bands,
 )
 from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm
@@ -593,10 +596,22 @@ class TradingEngine:
 
             # --- Compute additional metrics for the LLM ---
             atr = None
+            rsi = None
+            macd = None
+            macd_signal = None
+            macd_hist = None
+            bb_upper = None
+            bb_middle = None
+            bb_lower = None
             if ohlcv_data and assigned_tf in ohlcv_data:
                 candles = ohlcv_data[assigned_tf]
                 if candles:
                     atr = compute_atr(candles)
+                    if len(candles) >= 26:
+                        closes = [c[4] for c in candles]
+                        rsi = compute_rsi(closes)
+                        macd, macd_signal, macd_hist = compute_macd(closes)
+                        bb_upper, bb_middle, bb_lower = compute_bollinger_bands(closes)
 
             # Extract raw candles for the assigned timeframe
             raw_candles = None
@@ -698,6 +713,13 @@ class TradingEngine:
                 ohlcv_data=ohlcv_data,
                 assigned_timeframe=assigned_tf,
                 atr=atr,
+                rsi=rsi,
+                macd=macd,
+                macd_signal=macd_signal,
+                macd_hist=macd_hist,
+                bb_upper=bb_upper,
+                bb_middle=bb_middle,
+                bb_lower=bb_lower,
                 order_book_imbalance=order_book_imbalance,
                 unrealized_pnl=unrealized_pnl,
                 position_info=position_info,

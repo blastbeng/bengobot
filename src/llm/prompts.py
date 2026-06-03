@@ -257,6 +257,13 @@ def build_strategy_prompt(
     ohlcv_data: Optional[Dict[str, List]] = None,
     assigned_timeframe: Optional[str] = None,
     atr: Optional[float] = None,
+    rsi: Optional[float] = None,
+    macd: Optional[float] = None,
+    macd_signal: Optional[float] = None,
+    macd_hist: Optional[float] = None,
+    bb_upper: Optional[float] = None,
+    bb_middle: Optional[float] = None,
+    bb_lower: Optional[float] = None,
     order_book_imbalance: Optional[float] = None,
     unrealized_pnl: Optional[float] = None,
     position_info: Optional[Dict[str, Any]] = None,
@@ -287,6 +294,12 @@ Maximum coins to trade: {max_coins}
     # --- Volatility, order book imbalance, and position P&L context ---
     if atr is not None:
         prompt += f"ATR (14-period, {assigned_timeframe or 'default'}): {atr:.6f}\n"
+    if rsi is not None:
+        prompt += f"RSI (14): {rsi}\n"
+    if macd is not None and macd_signal is not None:
+        prompt += f"MACD: {macd}, Signal: {macd_signal}, Histogram: {macd_hist}\n"
+    if bb_upper is not None:
+        prompt += f"Bollinger Bands (20,2): Upper={bb_upper}, Middle={bb_middle}, Lower={bb_lower}\n"
     if order_book_imbalance is not None:
         prompt += f"Order book imbalance (bid_vol / ask_vol): {order_book_imbalance:.2f} ( >1 = buying pressure)\n"
     if spread_pct is not None:
@@ -313,9 +326,8 @@ Maximum coins to trade: {max_coins}
     if raw_candles:
         prompt += f"\nRaw OHLCV data for {assigned_timeframe} timeframe (each candle: [timestamp, open, high, low, close, volume]):\n{json.dumps(raw_candles)}\n"
         prompt += (
-            "You MUST compute your own technical indicators from this raw data. "
-            "Common indicators include RSI (14), MACD (12,26,9), Bollinger Bands (20,2), "
-            "moving averages, etc. Use these computed indicators to time entries and exits. "
+            "The technical indicators (RSI, MACD, Bollinger Bands) have already been computed for you from this data. "
+            "Use them together with the raw candles to time entries and exits. "
             "Explain in your reasoning how the indicators support your decision.\n"
         )
     if drawdown_pct is not None:
