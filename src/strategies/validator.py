@@ -26,14 +26,34 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
     # Require risk parameters for BUY/SELL
     if signal.action in ("BUY", "SELL"):
         params = signal.strategy_params or {}
-        required = ["stop_loss_pct", "take_profit_pct", "trailing_stop", "position_size_fraction", "max_hold_time_seconds"]
+        # Determine stop-loss method (default "fixed")
+        stop_method = params.get("stop_loss_method", "fixed")
+        if stop_method not in ("fixed", "atr_multiple"):
+            return Signal(action="HOLD", confidence=0.0, reasoning="Invalid stop_loss_method")
+
+        if stop_method == "atr_multiple":
+            # stop_loss_pct is optional; stop_loss_atr_multiple is required
+            if "stop_loss_atr_multiple" not in params:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Missing stop_loss_atr_multiple for atr_multiple method")
+            atr_mult = params["stop_loss_atr_multiple"]
+            if not isinstance(atr_mult, (int, float)) or atr_mult <= 0:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid stop_loss_atr_multiple")
+            # We still allow stop_loss_pct if present, but it's not required
+            sl = params.get("stop_loss_pct")
+            if sl is not None and (not isinstance(sl, (int, float)) or not (0 < sl < 1.0)):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid stop_loss_pct")
+        else:  # "fixed"
+            if "stop_loss_pct" not in params:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Missing required parameter: stop_loss_pct")
+            sl = params["stop_loss_pct"]
+            if not isinstance(sl, (int, float)) or not (0 < sl < 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid stop_loss_pct")
+
+        # The rest of the required parameters remain unchanged
+        required = ["take_profit_pct", "trailing_stop", "position_size_fraction", "max_hold_time_seconds"]
         for key in required:
             if key not in params:
                 return Signal(action="HOLD", confidence=0.0, reasoning=f"Missing required parameter: {key}")
-        # Validate each
-        sl = params["stop_loss_pct"]
-        if not isinstance(sl, (int, float)) or not (0 < sl < 1.0):
-            return Signal(action="HOLD", confidence=0.0, reasoning="Invalid stop_loss_pct")
         tp = params["take_profit_pct"]
         if not isinstance(tp, (int, float)) or not (0 < tp < 10.0):
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid take_profit_pct")
@@ -55,12 +75,26 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
         if not isinstance(mht, (int, float)) or mht <= 0:
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_hold_time_seconds")
 
+        # Optional new parameters
+        if "trailing_stop_activation_pct" in params:
+            tsa = params["trailing_stop_activation_pct"]
+            if not isinstance(tsa, (int, float)) or not (0 <= tsa <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid trailing_stop_activation_pct")
+        if "max_risk_per_trade_pct" in params:
+            mrp = params["max_risk_per_trade_pct"]
+            if not isinstance(mrp, (int, float)) or not (0 < mrp <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_risk_per_trade_pct")
+        if "entry_confidence_threshold" in params:
+            ect = params["entry_confidence_threshold"]
+            if not isinstance(ect, (int, float)) or not (0 <= ect <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid entry_confidence_threshold")
+
         # Logical consistency checks (no hardcoded values)
-        if tp <= sl:
+        if sl is not None and tp <= sl:
             return Signal(action="HOLD", confidence=0.0, reasoning="take_profit_pct must be greater than stop_loss_pct")
         if trailing:
             tsd = params.get("trailing_stop_distance_pct")
-            if tsd is not None and tsd >= sl:
+            if tsd is not None and sl is not None and tsd >= sl:
                 return Signal(action="HOLD", confidence=0.0, reasoning="trailing_stop_distance_pct must be less than stop_loss_pct")
 
     return signal
