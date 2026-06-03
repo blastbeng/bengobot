@@ -56,6 +56,39 @@ def init_db():
     conn.close()
 
 
+def insert_trade(trade: Dict[str, Any]):
+    """Insert a completed trade into the trade_history table."""
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO trade_history (
+            order_id, symbol, side, type, amount, price, cost,
+            fee_cost, fee_currency, realized_pnl, cost_basis,
+            strategy_type, note, status, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            trade.get("id"),
+            trade["symbol"],
+            trade["side"],
+            trade.get("type"),
+            trade["amount"],
+            trade["price"],
+            trade.get("cost"),
+            trade.get("fee", {}).get("cost"),
+            trade.get("fee", {}).get("currency"),
+            trade.get("realized_pnl"),
+            trade.get("cost_basis"),
+            trade.get("strategy_type"),
+            trade.get("note"),
+            trade.get("status", "closed"),
+            trade["timestamp"],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
 # ---------- Trading state helpers ----------
 
 def load_trading_state() -> Dict[str, Any]:
