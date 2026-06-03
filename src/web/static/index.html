@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bengobot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg: #0b0e14;
@@ -191,6 +192,16 @@
         .green { color: var(--green); }
         .red { color: var(--red); }
 
+        .clickable-coin {
+            cursor: pointer;
+            color: var(--accent);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        .clickable-coin:hover {
+            opacity: 0.8;
+        }
+
         #coins, #balances, #profit {
             font-size: 0.95rem;
             word-break: break-word;
@@ -301,7 +312,20 @@
 
         function updateUI(data) {
             // Coins
-            document.getElementById('coins').textContent = data.current_coins?.join(', ') || 'None';
+            const coinsDiv = document.getElementById('coins');
+            coinsDiv.innerHTML = '';
+            if (data.current_coins && data.current_coins.length > 0) {
+                data.current_coins.forEach(coin => {
+                    const span = document.createElement('span');
+                    span.textContent = coin;
+                    span.className = 'clickable-coin';
+                    span.style.marginRight = '8px';
+                    span.onclick = () => openChart(coin);
+                    coinsDiv.appendChild(span);
+                });
+            } else {
+                coinsDiv.textContent = 'None';
+            }
 
             // Positions
             const posBody = document.querySelector('#positions-table tbody');
@@ -309,7 +333,10 @@
             if (data.positions) {
                 for (const [sym, pos] of Object.entries(data.positions)) {
                     const row = posBody.insertRow();
-                    row.insertCell().textContent = sym;
+                    const symCell = row.insertCell();
+                    symCell.textContent = sym;
+                    symCell.className = 'clickable-coin';
+                    symCell.onclick = () => openChart(sym);
                     row.insertCell().textContent = pos.amount?.toFixed(6) || '';
                     row.insertCell().textContent = pos.price?.toFixed(4) || '';
                     row.insertCell().textContent = pos.stop_loss?.toFixed(4) || '';
@@ -391,7 +418,94 @@
             setTheme(!isLight);
         });
 
+        let chartInstance = null;
+        const modal = document.getElementById('chart-modal');
+        const closeBtn = document.getElementById('close-modal');
+        const timeframeSelect = document.getElementById('timeframe-select');
+        const chartTitle = document.getElementById('chart-title');
+        let currentSymbol = null;
+
+        closeBtn.onclick = () => {
+            modal.style.display = 'none';
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
+        };
+
+        timeframeSelect.onchange = () => {
+            if (currentSymbol) fetchAndRenderChart(currentSymbol, timeframeSelect.value);
+        };
+
+        async function openChart(symbol) {
+            currentSymbol = symbol;
+            chartTitle.textContent = symbol;
+            modal.style.display = 'flex';
+            await fetchAndRenderChart(symbol, timeframeSelect.value);
+        }
+
+        async function fetchAndRenderChart(symbol, timeframe) {
+            try {
+                const resp = await fetch(`/api/ohlcv/${encodeURIComponent(symbol)}?timeframe=${timeframe}&limit=48`);
+                if (!resp.ok) throw new Error('Failed to fetch OHLCV data');
+                const json = await resp.json();
+                const data = json.data;
+                const labels = data.map(d => new Date(d.timestamp).toLocaleString());
+                const closes = data.map(d => d.close);
+
+                const ctx = document.getElementById('ohlcv-chart').getContext('2d');
+                if (chartInstance) chartInstance.destroy();
+
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: symbol + ' Close',
+                            data: closes,
+                            borderColor: '#58a6ff',
+                            backgroundColor: 'rgba(88,166,255,0.1)',
+                            fill: true,
+                            tension: 0.2,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: { ticks: { color: '#8b949e' } },
+                            y: { ticks: { color: '#8b949e' } }
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                alert('Could not load chart data.');
+            }
+        }
+
         connect();
     </script>
+    <!-- Chart Modal -->
+    <div id="chart-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius); padding:24px; width:90%; max-width:900px; max-height:90vh; overflow-y:auto; position:relative;">
+            <button id="close-modal" style="position:absolute; top:12px; right:16px; background:none; border:none; color:var(--text); font-size:1.5rem; cursor:pointer;">&times;</button>
+            <h2 id="chart-title" style="margin-bottom:16px; color:var(--accent);"></h2>
+            <div style="margin-bottom:12px;">
+                <label for="timeframe-select" style="margin-right:8px;">Timeframe:</label>
+                <select id="timeframe-select" style="background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px;">
+                    <option value="5m">5m</option>
+                    <option value="15m">15m</option>
+                    <option value="1h" selected>1h</option>
+                    <option value="4h">4h</option>
+                    <option value="1d">1d</option>
+                </select>
+            </div>
+            <canvas id="ohlcv-chart" width="800" height="400"></canvas>
+        </div>
+    </div>
 </body>
 </html>

@@ -70,6 +70,28 @@ def config():
         "web_port": settings.WEB_PORT,
     }
 
+@app.get("/api/ohlcv/{symbol}")
+async def ohlcv(symbol: str, timeframe: str = "1h", limit: int = 24):
+    engine = get_engine()
+    exchange = engine.exchange
+    try:
+        ohlcv_data = await asyncio.to_thread(
+            exchange.fetch_ohlcv, symbol, timeframe, limit=limit
+        )
+        result = []
+        for candle in ohlcv_data:
+            result.append({
+                "timestamp": candle[0],
+                "open": candle[1],
+                "high": candle[2],
+                "low": candle[3],
+                "close": candle[4],
+                "volume": candle[5],
+            })
+        return {"symbol": symbol, "timeframe": timeframe, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
