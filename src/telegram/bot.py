@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from src.config.settings import settings
@@ -125,15 +126,22 @@ class TelegramBot:
             fee_currency = fee.get('currency', '')
             fee_str = f"{fee_cost:.6f} {fee_currency}" if fee_cost else "—"
 
+            # Formatted timestamp
+            ts = datetime.fromtimestamp(t['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
             emoji = "🟢" if side == "BUY" else "🔴"
             line = f"{emoji} <b>{side}</b> <code>{sym}</code>\n"
+            line += f"   🕒 {ts}\n"
             line += f"   Amount: {amt:.6f}  Price: {price:.4f}\n"
             line += f"   Fee: {fee_str}"
 
             if t['side'] == 'sell' and 'realized_pnl' in t:
                 pnl = t['realized_pnl']
                 pnl_sign = "+" if pnl >= 0 else ""
-                line += f"  P&L: {pnl_sign}{pnl:.4f}"
+                cost_basis = t.get('cost_basis', 0)
+                pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else 0.0
+                pnl_pct_sign = "+" if pnl_pct >= 0 else ""
+                line += f"  P&L: {pnl_sign}{pnl:.4f} ({pnl_pct_sign}{pnl_pct:.2f}%)"
 
             msg += line + "\n\n"
 
