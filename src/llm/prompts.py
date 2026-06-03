@@ -153,6 +153,9 @@ def build_strategy_prompt(
     bid_wall_volume: Optional[float] = None,
     ask_wall_volume: Optional[float] = None,
     order_book_pressure: Optional[float] = None,
+    depth_imbalances: Optional[Dict[str, float]] = None,
+    order_book_slope: Optional[float] = None,
+    mid_price_bias: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -179,6 +182,12 @@ Maximum coins to trade: {max_coins}
         prompt += f"Ask wall volume (within 1% of best ask): {ask_wall_volume:.4f}\n"
     if order_book_pressure is not None:
         prompt += f"Order book pressure (0 = strong sell, 1 = strong buy): {order_book_pressure:.2f}\n"
+    if depth_imbalances:
+        prompt += f"Order book depth imbalances (bid_vol/total_vol at distance from mid): {json.dumps(depth_imbalances)}\n"
+    if order_book_slope is not None:
+        prompt += f"Order book slope (volume change per 0.5% price move): {order_book_slope:.2f}\n"
+    if mid_price_bias is not None:
+        prompt += f"Mid-price bias (-1 = near bid, +1 = near ask): {mid_price_bias:.2f}\n"
     if unrealized_pnl is not None and position_info:
         prompt += f"Current position unrealized P&L: {unrealized_pnl:.2f} {symbol.split('/')[1]}\n"
         prompt += f"Position details: entry price {position_info.get('price')}, amount {position_info.get('amount')}\n"
@@ -191,6 +200,9 @@ Interpret the order book metrics:
 - A bid/ask volume ratio > 1.5 indicates strong buying pressure (favor BUY); < 0.67 indicates selling pressure (favor SELL).
 - Large bid wall volume relative to ask wall volume suggests support; large ask wall suggests resistance.
 - Order book pressure near 1.0 signals overwhelming buying interest; near 0.0 signals overwhelming selling interest.
+- Depth imbalances: if the imbalance is high (>0.7) at 0.5% but drops at 1%, the support/resistance is thin – expect quick breakouts. If it stays high at 2%, the wall is thick.
+- Order book slope: a high slope means volume builds quickly near the current price (strong wall); a low slope means thin liquidity.
+- Mid-price bias: a positive bias (near ask) suggests sellers are aggressive; a negative bias (near bid) suggests buyers are aggressive.
 
 If the position is already in profit, consider trailing the stop.
 

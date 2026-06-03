@@ -595,6 +595,31 @@ class TradingEngine:
                 if total_wall > 0:
                     order_book_pressure = bid_wall_volume / total_wall
 
+                # --- Deeper order‑book metrics ---
+                depth_imbalances = {}
+                order_book_slope = None
+                mid_price_bias = None
+
+                # Depth imbalance at 0.5%, 1%, 2% from mid
+                for pct in [0.005, 0.01, 0.02]:
+                    bid_cutoff = mid * (1 - pct)
+                    ask_cutoff = mid * (1 + pct)
+                    bid_vol = sum(b[1] for b in bids if b[0] >= bid_cutoff)
+                    ask_vol = sum(a[1] for a in asks if a[0] <= ask_cutoff)
+                    total = bid_vol + ask_vol
+                    imbalance = bid_vol / total if total > 0 else 0.5
+                    depth_imbalances[f"{pct*100:.1f}%"] = round(imbalance, 3)
+
+                # Order‑book slope: change in cumulative volume between 0.5% and 1% levels
+                vol_05 = sum(b[1] for b in bids if b[0] >= mid * 0.995) + sum(a[1] for a in asks if a[0] <= mid * 1.005)
+                vol_1 = sum(b[1] for b in bids if b[0] >= mid * 0.99) + sum(a[1] for a in asks if a[0] <= mid * 1.01)
+                order_book_slope = (vol_1 - vol_05) / 0.005  # volume per 0.5% price move
+
+                # Mid‑price bias: -1 (near bid) to +1 (near ask)
+                if best_ask != best_bid:
+                    mid_price_bias = (mid - best_bid) / (best_ask - best_bid) - 0.5  # range -0.5 to +0.5
+                    mid_price_bias *= 2  # scale to -1..1
+
             # Unrealized P&L for current position (if any)
             unrealized_pnl = None
             position_info = None
@@ -625,6 +650,9 @@ class TradingEngine:
                 bid_wall_volume=bid_wall_volume,
                 ask_wall_volume=ask_wall_volume,
                 order_book_pressure=order_book_pressure,
+                depth_imbalances=depth_imbalances,
+                order_book_slope=order_book_slope,
+                mid_price_bias=mid_price_bias,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
