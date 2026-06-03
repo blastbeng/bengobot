@@ -75,7 +75,12 @@ class TelegramBot:
         coins, positions, balance = await asyncio.to_thread(get_status)
 
         msg = "<b>📊 Current Status</b>\n\n"
-        msg += f"<b>🪙 Tracked Coins:</b> {', '.join(coins) if coins else 'None'}\n\n"
+        coin_timeframes = getattr(self.engine, 'coin_timeframes', {})
+        coin_list = []
+        for c in coins:
+            tf = coin_timeframes.get(c, '?')
+            coin_list.append(f"{c} ({tf})")
+        msg += f"<b>🪙 Tracked Coins:</b> {', '.join(coin_list) if coin_list else 'None'}\n\n"
 
         if positions:
             msg += "<b>📈 Open Positions:</b>\n"

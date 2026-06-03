@@ -1,5 +1,6 @@
 import json
 from typing import List, Dict, Any, Optional
+from src.config.settings import settings
 
 SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. Your primary goal is to generate short-term profit by identifying coins with strong recent momentum, high volatility, and clear short-term trends. Prioritize quick gains over long-term holding. Avoid coins that are stagnant or have low short-term potential.
 
@@ -45,6 +46,7 @@ def build_coin_selection_prompt(
     market_limits: Dict[str, Dict[str, Any]],
     performance: Optional[Dict[str, Any]] = None,
     ohlcv_data: Optional[Dict[str, Dict[str, List]]] = None,
+    coin_timeframes: Optional[Dict[str, str]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -84,10 +86,14 @@ def build_coin_selection_prompt(
                     }
                 ohlcv_summary[symbol] = summary
 
+    if coin_timeframes is None:
+        coin_timeframes = {}
     prompt = f"""Current base currency: {base_currency}
 Your available {base_currency} balance: {base_balance:.2f}
 Maximum number of coins to trade: {max_coins}
 Budget per coin (balance / max_coins): {per_coin_budget:.2f} {base_currency}
+Available timeframes: {json.dumps(settings.OHLCV_TIMEFRAMES)}
+Currently tracked coins and their timeframes: {json.dumps(dict(zip(current_coins, [coin_timeframes.get(c, settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h") for c in current_coins]))) if current_coins else "None"}
 Currently traded coins: {json.dumps(current_coins)}
 
 Available trading pairs with market data and minimum trade cost (in {base_currency}):
@@ -97,7 +103,7 @@ Available trading pairs with market data and minimum trade cost (in {base_curren
 
 Select up to {max_coins} coins to trade. You MUST only select coins where the per-coin budget ({per_coin_budget:.2f} {base_currency}) is greater than or equal to the coin's min_trade_cost. Skip any coin that does not meet this requirement. Prefer coins with high volume and positive momentum. You may keep some current coins if they are still promising and meet the budget requirement, or replace them.
 
-Return a JSON array of symbols."""
+Return a JSON array of objects, each with "symbol" and "timeframe" fields. The timeframe must be one of the available timeframes (e.g., "5m", "15m", "1h", "4h") that you believe is most suitable for trading that coin based on the multi-timeframe OHLCV data. Example: [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, ...]"""
     if ohlcv_summary:
         prompt += f"\nMulti-timeframe OHLCV summary (price change %, high, low, volume):\n{json.dumps(ohlcv_summary, indent=2)}\n"
     if performance:
@@ -122,6 +128,7 @@ def build_strategy_prompt(
     max_coins: int,
     performance: Optional[Dict[str, Any]] = None,
     ohlcv_data: Optional[Dict[str, List]] = None,
+    assigned_timeframe: Optional[str] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -131,7 +138,10 @@ Current balances: {json.dumps(balance)}
 Open positions: {json.dumps(open_positions)}
 Per-coin budget (balance / max_coins): {per_coin_budget:.2f} {symbol.split('/')[1]}
 Maximum coins to trade: {max_coins}
-
+"""
+    if assigned_timeframe:
+        prompt += f"\nAssigned trading timeframe for this coin: {assigned_timeframe}. Base your decision primarily on the OHLCV data for this timeframe.\n"
+    prompt += f"""
 **Your primary objective is short-term profit.** Focus on quick gains. Prefer strategies like scalping or momentum if the coin shows strong short-term movement. If the coin is stagnant or the budget is too small for a meaningful position, choose HOLD.
 
 Based on the above, decide whether to BUY, SELL, or HOLD. Consider the per-coin budget: only BUY if the budget is sufficient to meet the minimum trade size and the position size is meaningful. If the budget is too small, prefer HOLD. Provide a strategy if action is BUY or SELL. Return a JSON object as specified.

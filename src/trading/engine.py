@@ -49,6 +49,7 @@ class TradingEngine:
             self.trader = LiveTrader(self.exchange)
 
         self.current_coins: List[str] = []
+        self.coin_timeframes: Dict[str, str] = {}  # symbol -> assigned timeframe
         self.positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position info
         self.trade_history: List[Dict[str, Any]] = []
         self.initial_balance: float = 0.0
@@ -270,6 +271,7 @@ class TradingEngine:
         state = load_trading_state()
 
         self.current_coins = state.get("current_coins", [])
+        self.coin_timeframes = state.get("coin_timeframes", {})
         self.positions = state.get("positions", {})
         # Ensure risk fields exist (for backward compatibility)
         for pos in self.positions.values():
@@ -297,6 +299,7 @@ class TradingEngine:
     async def _save_state(self):
         """Persist current coins, positions, and trade history to SQLite."""
         await asyncio.to_thread(save_trading_state, "current_coins", self.current_coins)
+        await asyncio.to_thread(save_trading_state, "coin_timeframes", self.coin_timeframes)
         await asyncio.to_thread(save_trading_state, "positions", self.positions)
         # Keep only the last 1000 trades to avoid unbounded growth
         self.trade_history = self.trade_history[-1000:]
@@ -403,19 +406,40 @@ class TradingEngine:
             market_limits=market_limits,
             performance=perf,
             ohlcv_data=ohlcv_data,
+            coin_timeframes=self.coin_timeframes,
         )
         response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 300)
         logger.info(f"LLM coin selection raw response: {response}")
 
         try:
-            new_coins = json.loads(response)
-            if isinstance(new_coins, list):
-                # Validate that coins are in available pairs
-                valid_coins = [c for c in new_coins if c in available_pairs]
-                self.current_coins = valid_coins[: self.max_coins]
+            parsed = json.loads(response)
+            new_coins = []
+            new_timeframes = {}
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict) and "symbol" in item:
+                        sym = item["symbol"]
+                        if sym in available_pairs:
+                            new_coins.append(sym)
+                            tf = item.get("timeframe")
+                            # Validate timeframe is in allowed list
+                            if tf in settings.OHLCV_TIMEFRAMES:
+                                new_timeframes[sym] = tf
+                            else:
+                                # fallback to first timeframe
+                                new_timeframes[sym] = settings.OHLCV_TIMEFRAMES[0]
+                    elif isinstance(item, str):
+                        # backward compatibility: plain string
+                        if item in available_pairs:
+                            new_coins.append(item)
+                            new_timeframes[item] = settings.OHLCV_TIMEFRAMES[0]
+                self.current_coins = new_coins[: self.max_coins]
+                # Keep timeframes only for selected coins
+                self.coin_timeframes = {sym: new_timeframes[sym] for sym in self.current_coins if sym in new_timeframes}
+            else:
+                logger.error("LLM coin selection response is not a list.")
         except json.JSONDecodeError:
             logger.error("Failed to parse coin selection response.")
-            new_coins = []
 
         # Fallback: if LLM returned no coins, pick top-volume affordable coins
         if not self.current_coins:
@@ -433,6 +457,9 @@ class TradingEngine:
                 if len(fallback_coins) >= self.max_coins:
                     break
             self.current_coins = fallback_coins
+            # Assign default timeframe to fallback coins
+            default_tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
+            self.coin_timeframes = {sym: default_tf for sym in fallback_coins}
 
         logger.info(f"Selected coins: {self.current_coins}")
         if self.notifier:
@@ -461,12 +488,13 @@ class TradingEngine:
             order_book = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
             balance = await asyncio.to_thread(self.trader.fetch_balance)
 
-            # Fetch multi-timeframe OHLCV for this coin
+            # Fetch OHLCV for the coin's assigned timeframe
+            assigned_tf = self.coin_timeframes.get(symbol, settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h")
             ohlcv_data = {}
             if settings.OHLCV_TIMEFRAMES:
                 try:
                     ohlcv_data = await asyncio.to_thread(
-                        get_multi_timeframe_ohlcv, self.exchange, symbol, settings.OHLCV_TIMEFRAMES, limit=24
+                        get_multi_timeframe_ohlcv, self.exchange, symbol, [assigned_tf], limit=24
                     )
                 except Exception as e:
                     logger.warning(f"OHLCV fetch failed for {symbol}: {e}")
@@ -489,6 +517,7 @@ class TradingEngine:
                 max_coins=self.max_coins,
                 performance=perf,
                 ohlcv_data=ohlcv_data,
+                assigned_timeframe=assigned_tf,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
