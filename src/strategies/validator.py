@@ -48,4 +48,12 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
         if not isinstance(psf, (int, float)) or not (0 < psf <= 1.0):
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid position_size_fraction")
 
+        # Logical consistency checks (no hardcoded values)
+        if tp <= sl:
+            return Signal(action="HOLD", confidence=0.0, reasoning="take_profit_pct must be greater than stop_loss_pct")
+        if trailing:
+            tsd = params.get("trailing_stop_distance_pct")
+            if tsd is not None and tsd >= sl:
+                return Signal(action="HOLD", confidence=0.0, reasoning="trailing_stop_distance_pct must be less than stop_loss_pct")
+
     return signal

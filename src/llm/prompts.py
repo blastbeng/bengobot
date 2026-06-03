@@ -85,7 +85,7 @@ SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. 
 Key principles:
 - Only trade coins with strong, confirmed short-term momentum and sufficient volatility to cover fees.
 - Avoid trading in choppy, sideways, or low-volume markets. If the overall market (e.g., BTC) is flat or declining, be more selective.
-- Use the provided technical indicators (RSI, MACD, Bollinger Bands, ATR) to time entries and exits. Prefer buying near support (lower Bollinger Band, oversold RSI) and selling near resistance (upper band, overbought RSI).
+- You will receive raw OHLCV candle data. Compute your own technical indicators (RSI, MACD, Bollinger Bands, moving averages, etc.) from this data. Use them to time entries and exits. Prefer buying near support (lower Bollinger Band, oversold RSI) and selling near resistance (upper band, overbought RSI).
 - Always set a stop-loss based on recent swing lows or ATR, and a take-profit that offers at least a 2:1 reward-to-risk ratio (take_profit_pct >= 2 * stop_loss_pct). If you cannot achieve this, output HOLD.
 - Use trailing stops to lock in profits when the price moves favourably.
 - Adjust position size according to confidence: use smaller fractions (<0.5) when confidence is below 0.7, and larger fractions (0.8-1.0) only when confidence is very high (>0.85).
@@ -231,14 +231,8 @@ def build_strategy_prompt(
     order_book_slope: Optional[float] = None,
     mid_price_bias: Optional[float] = None,
     fee_rate: Optional[float] = None,
-    rsi: Optional[float] = None,
-    macd: Optional[float] = None,
-    macd_signal: Optional[float] = None,
-    macd_hist: Optional[float] = None,
-    bb_upper: Optional[float] = None,
-    bb_middle: Optional[float] = None,
-    bb_lower: Optional[float] = None,
     drawdown_pct: Optional[float] = None,
+    raw_candles: Optional[List[List]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -277,13 +271,15 @@ Maximum coins to trade: {max_coins}
         prompt += f"Current position unrealized P&L: {unrealized_pnl:.2f} {symbol.split('/')[1]}\n"
         prompt += f"Position details: entry price {position_info.get('price')}, amount {position_info.get('amount')}\n"
 
-    # --- Technical indicators ---
-    if rsi is not None:
-        prompt += f"RSI (14): {rsi}\n"
-    if macd is not None and macd_signal is not None:
-        prompt += f"MACD: {macd}, Signal: {macd_signal}, Histogram: {macd_hist}\n"
-    if bb_upper is not None:
-        prompt += f"Bollinger Bands (20,2): Upper={bb_upper}, Middle={bb_middle}, Lower={bb_lower}\n"
+    # --- Raw OHLCV data for indicator computation ---
+    if raw_candles:
+        prompt += f"\nRaw OHLCV data for {assigned_timeframe} timeframe (each candle: [timestamp, open, high, low, close, volume]):\n{json.dumps(raw_candles)}\n"
+        prompt += (
+            "You MUST compute your own technical indicators from this raw data. "
+            "Common indicators include RSI (14), MACD (12,26,9), Bollinger Bands (20,2), "
+            "moving averages, etc. Use these computed indicators to time entries and exits. "
+            "Explain in your reasoning how the indicators support your decision.\n"
+        )
     if drawdown_pct is not None:
         prompt += f"Current account drawdown: {drawdown_pct}%\n"
 

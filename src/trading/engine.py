@@ -16,9 +16,6 @@ from src.llm.prompts import (
     build_coin_selection_prompt,
     build_strategy_prompt,
     compute_atr,
-    compute_rsi,
-    compute_macd,
-    compute_bollinger_bands,
 )
 from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm
@@ -601,25 +598,10 @@ class TradingEngine:
                 if candles:
                     atr = compute_atr(candles)
 
-            # --- Technical indicators from OHLCV ---
-            rsi = None
-            macd = None
-            macd_signal = None
-            macd_hist = None
-            bb_upper = None
-            bb_middle = None
-            bb_lower = None
-
+            # Extract raw candles for the assigned timeframe
+            raw_candles = None
             if ohlcv_data and assigned_tf in ohlcv_data:
-                candles = ohlcv_data[assigned_tf]
-                if candles and len(candles) >= 26:
-                    closes = [c[4] for c in candles]
-                    # RSI (14)
-                    rsi = compute_rsi(closes, 14)
-                    # MACD (12, 26, 9)
-                    macd, macd_signal, macd_hist = compute_macd(closes)
-                    # Bollinger Bands (20, 2)
-                    bb_upper, bb_middle, bb_lower = compute_bollinger_bands(closes)
+                raw_candles = ohlcv_data[assigned_tf]
 
             # Order book imbalance (bid volume / ask volume, top 5 levels)
             bids_vol = sum(bid[1] for bid in order_book.get('bids', [])[:5])
@@ -714,14 +696,8 @@ class TradingEngine:
                 order_book_slope=order_book_slope,
                 mid_price_bias=mid_price_bias,
                 fee_rate=fee_rate,
-                rsi=rsi,
-                macd=macd,
-                macd_signal=macd_signal,
-                macd_hist=macd_hist,
-                bb_upper=bb_upper,
-                bb_middle=bb_middle,
-                bb_lower=bb_lower,
                 drawdown_pct=perf.get("equity_curve", {}).get("drawdown_pct"),
+                raw_candles=raw_candles,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
