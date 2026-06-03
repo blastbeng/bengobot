@@ -19,6 +19,67 @@ def compute_atr(candles: List[List], period: int = 14) -> float:
     period = min(period, len(true_ranges))
     return sum(true_ranges[-period:]) / period
 
+
+def compute_rsi(closes: List[float], period: int = 14) -> Optional[float]:
+    """Compute RSI for a list of closing prices."""
+    if len(closes) < period + 1:
+        return None
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i-1]
+        if diff >= 0:
+            gains.append(diff)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(-diff)
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return round(rsi, 2)
+
+
+def _ema(data: List[float], period: int) -> List[float]:
+    """Exponential moving average."""
+    if len(data) < period:
+        return []
+    ema = [sum(data[:period]) / period]
+    multiplier = 2 / (period + 1)
+    for price in data[period:]:
+        ema.append((price - ema[-1]) * multiplier + ema[-1])
+    return ema
+
+
+def compute_macd(closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9):
+    """Compute MACD line, signal line, and histogram. Returns (macd, signal, hist) or Nones."""
+    if len(closes) < slow + signal:
+        return None, None, None
+    ema_fast = _ema(closes, fast)
+    ema_slow = _ema(closes, slow)
+    macd_line = [f - s for f, s in zip(ema_fast, ema_slow)]
+    signal_line = _ema(macd_line, signal)
+    # Align lengths
+    macd_line = macd_line[-len(signal_line):]
+    hist = [m - s for m, s in zip(macd_line, signal_line)]
+    return round(macd_line[-1], 6), round(signal_line[-1], 6), round(hist[-1], 6)
+
+
+def compute_bollinger_bands(closes: List[float], period: int = 20, std_dev: float = 2.0):
+    """Return (upper, middle, lower) Bollinger Bands for the most recent candle."""
+    if len(closes) < period:
+        return None, None, None
+    recent = closes[-period:]
+    middle = sum(recent) / period
+    variance = sum((x - middle) ** 2 for x in recent) / period
+    std = variance ** 0.5
+    upper = middle + std_dev * std
+    lower = middle - std_dev * std
+    return round(upper, 6), round(middle, 6), round(lower, 6)
+
 SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. Your primary goal is to generate consistent short-term profit while preserving capital. You must avoid large drawdowns and only trade when there is a clear edge.
 
 Key principles:
