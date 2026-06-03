@@ -139,6 +139,8 @@ class TradingEngine:
                     pos["trailing_stop_distance_pct"] = old["trailing_stop_distance_pct"]
                 if "max_hold_time_seconds" in old:
                     pos["max_hold_time_seconds"] = old["max_hold_time_seconds"]
+                if "trailing_stop_activation_pct" in old:
+                    pos["trailing_stop_activation_pct"] = old["trailing_stop_activation_pct"]
                 if "timeframe" in old:
                     pos["timeframe"] = old["timeframe"]
         # Re-apply force_close for positions still missing risk parameters
@@ -797,7 +799,9 @@ class TradingEngine:
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
             signal = strategy.generate_signal({})
-            validated = validate_signal(signal, fee_rate=fee_rate)
+            # Extract per-trade confidence threshold if present
+            entry_conf_threshold = signal.strategy_params.get("entry_confidence_threshold") if signal.strategy_params else None
+            validated = validate_signal(signal, fee_rate=fee_rate, entry_confidence_threshold=entry_conf_threshold)
 
             # Log raw response if validation turned a non-HOLD into HOLD
             if signal.action != "HOLD" and validated.action == "HOLD":
@@ -826,7 +830,7 @@ class TradingEngine:
                 return
 
             if validated.action != "HOLD":
-                await self._execute_signal(symbol, validated, timeframe=assigned_tf)
+                await self._execute_signal(symbol, validated, timeframe=assigned_tf, atr=atr)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
             if self.notifier:
@@ -939,11 +943,27 @@ class TradingEngine:
 
                 # Trailing stop update (only if enabled)
                 if pos.get("trailing_stop") and pos.get("trailing_stop_distance_pct"):
-                    distance = pos["trailing_stop_distance_pct"]
-                    new_stop = current_price * (1 - distance)
-                    if new_stop > pos["stop_loss"]:
-                        pos["stop_loss"] = new_stop
-                        logger.debug(f"Trailing stop updated for {symbol}: new stop {new_stop:.4f}")
+                    # Check activation threshold
+                    activation_pct = pos.get("trailing_stop_activation_pct")
+                    if activation_pct is not None:
+                        entry_price = pos["price"]
+                        profit_pct = (current_price - entry_price) / entry_price
+                        if profit_pct < activation_pct:
+                            # Not yet activated; skip trailing stop update
+                            pass
+                        else:
+                            distance = pos["trailing_stop_distance_pct"]
+                            new_stop = current_price * (1 - distance)
+                            if new_stop > pos["stop_loss"]:
+                                pos["stop_loss"] = new_stop
+                                logger.debug(f"Trailing stop updated for {symbol}: new stop {new_stop:.4f}")
+                    else:
+                        # No activation threshold – update immediately
+                        distance = pos["trailing_stop_distance_pct"]
+                        new_stop = current_price * (1 - distance)
+                        if new_stop > pos["stop_loss"]:
+                            pos["stop_loss"] = new_stop
+                            logger.debug(f"Trailing stop updated for {symbol}: new stop {new_stop:.4f}")
 
                 # Time‑based exit (LLM‑defined max hold time)
                 max_hold = pos.get("max_hold_time_seconds")
@@ -975,7 +995,7 @@ class TradingEngine:
             except Exception as e:
                 logger.error(f"Risk check failed for {symbol}: {e}")
 
-    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None):
+    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None):
         """Execute a BUY or SELL signal."""
         base, quote = symbol.split("/")
         balance = await asyncio.to_thread(self.trader.fetch_balance)
@@ -998,6 +1018,17 @@ class TradingEngine:
             trailing_stop = params["trailing_stop"]
             trailing_stop_distance_pct = params.get("trailing_stop_distance_pct")
 
+            # Determine stop-loss percentage based on method
+            stop_method = params.get("stop_loss_method", "fixed")
+            if stop_method == "atr_multiple" and atr is not None and atr > 0:
+                atr_mult = params["stop_loss_atr_multiple"]
+                ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+                current_price = ticker['last']
+                sl_pct = (atr_mult * atr) / current_price
+                logger.info(f"ATR-based stop: ATR={atr}, multiplier={atr_mult}, stop_loss_pct={sl_pct:.4%}")
+            else:
+                sl_pct = params["stop_loss_pct"]
+
             # Use per-coin budget as the buy amount, capped at available balance
             quote_balance = balance.get(quote, 0.0)
             position_fraction = params["position_size_fraction"]
@@ -1006,6 +1037,24 @@ class TradingEngine:
             position_fraction = max(0.1, min(1.0, position_fraction))
             per_coin_budget = (quote_balance / self.effective_max_coins) * position_fraction if self.effective_max_coins > 0 else 0.0
             amount = min(per_coin_budget, quote_balance)
+
+            # Apply max risk per trade if provided
+            max_risk_pct = params.get("max_risk_per_trade_pct")
+            if max_risk_pct is not None and sl_pct > 0:
+                # Compute total portfolio value (quote balance + open positions value)
+                total_value = quote_balance
+                for sym, pos in self.positions.items():
+                    try:
+                        t = await asyncio.to_thread(self.exchange.fetch_ticker, sym)
+                        total_value += pos['amount'] * t['last']
+                    except Exception:
+                        pass
+                max_risk_amount = total_value * max_risk_pct
+                # The loss if stop is hit: amount * sl_pct
+                max_allowed_amount = max_risk_amount / sl_pct
+                amount = min(amount, max_allowed_amount)
+                logger.info(f"Max risk per trade: {max_risk_pct:.2%} of {total_value:.2f} = {max_risk_amount:.2f}, max allowed amount = {max_allowed_amount:.2f}")
+
             if amount <= 0:
                 logger.info(f"Insufficient {quote} to buy {symbol}")
                 if self.notifier:
@@ -1047,9 +1096,7 @@ class TradingEngine:
                 net_base = order['amount'] - (fee_cost if fee_currency == base else 0.0)
 
                 # Risk parameters are guaranteed by the validator
-                # sl_pct, tp_pct, trailing_stop, trailing_stop_distance_pct are already
-                # computed above (with fee-aware minimum enforcement)
-                sl_pct = params["stop_loss_pct"]
+                # sl_pct, tp_pct, trailing_stop, trailing_stop_distance_pct are set above
 
                 if symbol in self.positions:
                     # Accumulate: weighted average price with cost basis
@@ -1067,6 +1114,7 @@ class TradingEngine:
                     self.positions[symbol]["trailing_stop"] = trailing_stop
                     self.positions[symbol]["trailing_stop_distance_pct"] = trailing_stop_distance_pct
                     self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
+                    self.positions[symbol]["trailing_stop_activation_pct"] = params.get("trailing_stop_activation_pct")
                     self.positions[symbol]["timeframe"] = timeframe
                 else:
                     entry_price = cost_basis / net_base if net_base > 0 else order["price"]
@@ -1083,6 +1131,7 @@ class TradingEngine:
                         "trailing_stop": trailing_stop,
                         "trailing_stop_distance_pct": trailing_stop_distance_pct,
                         "max_hold_time_seconds": params.get("max_hold_time_seconds"),
+                        "trailing_stop_activation_pct": params.get("trailing_stop_activation_pct"),
                         "timeframe": timeframe,
                     }
                 order["strategy_type"] = signal.strategy_type

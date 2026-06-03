@@ -5,7 +5,12 @@ MIN_CONFIDENCE = 0.65
 VALID_STRATEGY_TYPES = {"scalping", "momentum", "mean_reversion", "breakout"}
 
 
-def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None, fee_rate: Optional[float] = None) -> Signal:
+def validate_signal(
+    signal: Signal,
+    market_data: Optional[Dict[str, Any]] = None,
+    fee_rate: Optional[float] = None,
+    entry_confidence_threshold: Optional[float] = None,
+) -> Signal:
     """
     Validate a trading signal.
     - If action is HOLD, return as-is.
@@ -17,7 +22,8 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
     if signal.action == "HOLD":
         return signal
 
-    if signal.confidence < MIN_CONFIDENCE:
+    threshold = entry_confidence_threshold if entry_confidence_threshold is not None else MIN_CONFIDENCE
+    if signal.confidence < threshold:
         return Signal(action="HOLD", confidence=0.0, reasoning="Confidence too low")
 
     if signal.strategy_type and signal.strategy_type not in VALID_STRATEGY_TYPES:
