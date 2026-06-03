@@ -1,7 +1,7 @@
 from .base import Signal
 from typing import Dict, Any, Optional
 
-MIN_CONFIDENCE = 0.6
+MIN_CONFIDENCE = 0.65
 VALID_STRATEGY_TYPES = {"scalping", "momentum", "mean_reversion", "breakout"}
 
 
@@ -26,7 +26,7 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
     # Require risk parameters for BUY/SELL
     if signal.action in ("BUY", "SELL"):
         params = signal.strategy_params or {}
-        required = ["stop_loss_pct", "take_profit_pct", "trailing_stop", "position_size_fraction"]
+        required = ["stop_loss_pct", "take_profit_pct", "trailing_stop", "position_size_fraction", "max_hold_time_seconds"]
         for key in required:
             if key not in params:
                 return Signal(action="HOLD", confidence=0.0, reasoning=f"Missing required parameter: {key}")
@@ -47,10 +47,15 @@ def validate_signal(signal: Signal, market_data: Optional[Dict[str, Any]] = None
         psf = params["position_size_fraction"]
         if not isinstance(psf, (int, float)) or not (0 < psf <= 1.0):
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid position_size_fraction")
+        mht = params["max_hold_time_seconds"]
+        if not isinstance(mht, (int, float)) or mht <= 0:
+            return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_hold_time_seconds")
 
         # Logical consistency checks (no hardcoded values)
         if tp <= sl:
             return Signal(action="HOLD", confidence=0.0, reasoning="take_profit_pct must be greater than stop_loss_pct")
+        if tp < 2 * sl:
+            return Signal(action="HOLD", confidence=0.0, reasoning="take_profit_pct must be at least 2x stop_loss_pct")
         if trailing:
             tsd = params.get("trailing_stop_distance_pct")
             if tsd is not None and tsd >= sl:

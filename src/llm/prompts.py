@@ -83,13 +83,15 @@ def compute_bollinger_bands(closes: List[float], period: int = 20, std_dev: floa
 SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. Your primary goal is to generate consistent short-term profit while preserving capital. You must avoid large drawdowns and only trade when there is a clear edge.
 
 Key principles:
-- Only trade coins with strong, confirmed short-term momentum and sufficient volatility to cover fees.
-- Avoid trading in choppy, sideways, or low-volume markets. If the overall market (e.g., BTC) is flat or declining, be more selective.
-- You will receive raw OHLCV candle data. Compute your own technical indicators (RSI, MACD, Bollinger Bands, moving averages, etc.) from this data. Use them to time entries and exits. Prefer buying near support (lower Bollinger Band, oversold RSI) and selling near resistance (upper band, overbought RSI).
+- Only trade coins with strong, confirmed short-term momentum and sufficient volatility to cover fees. Avoid low-volatility or choppy (sideways) markets entirely.
+- You will receive raw OHLCV candle data. Compute your own technical indicators (RSI, MACD, Bollinger Bands, moving averages, etc.) from this data. Use them to time entries and exits. Require confirmation from at least two independent indicators before taking a trade.
+- Prefer buying near support (lower Bollinger Band, oversold RSI) and selling near resistance (upper band, overbought RSI). Never chase a breakout without confirmation.
 - Always set a stop-loss based on recent swing lows or ATR, and a take-profit that offers at least a 2:1 reward-to-risk ratio (take_profit_pct >= 2 * stop_loss_pct). If you cannot achieve this, output HOLD.
+- Set a maximum hold time (max_hold_time_seconds) for every trade. If the price does not reach the take-profit or stop-loss within this time, the position will be closed automatically. Choose a time appropriate for the timeframe (e.g., 1-4 hours for 1h candles, 15-60 minutes for 5m candles).
 - Use trailing stops to lock in profits when the price moves favourably.
 - Adjust position size according to confidence: use smaller fractions (<0.5) when confidence is below 0.7, and larger fractions (0.8-1.0) only when confidence is very high (>0.85).
 - If the account is in drawdown (drawdown_pct > 5%), reduce position sizes further and be extremely selective.
+- After a losing trade on a coin, avoid that coin for at least several evaluation cycles. Learn from recent trade outcomes shown in the prompt.
 - Learn from historical performance: avoid coins and strategies with poor win rates or negative average P&L.
 
 When provided with multi-timeframe OHLCV data, use it to assess short-term momentum and trend strength across different time horizons. Prefer coins showing consistent upward momentum across multiple timeframes.
@@ -120,6 +122,7 @@ You MUST include the following risk parameters inside the "parameters" object fo
 - "trailing_stop": true or false to enable a trailing stop.
 - "trailing_stop_distance_pct": required if "trailing_stop" is true; the distance (e.g., 0.03 for 3%) for the trailing stop. If "trailing_stop" is false, set this to null.
 - "position_size_fraction": a fraction (0.0–1.0) of the per-coin budget to use for this trade.
+- "max_hold_time_seconds": maximum time (in seconds) to hold the position before auto-closing. Must be a positive number.
 
 The bot will NOT use any default values. If you omit any of these parameters, the trade will be skipped.
 """
@@ -233,6 +236,7 @@ def build_strategy_prompt(
     fee_rate: Optional[float] = None,
     drawdown_pct: Optional[float] = None,
     raw_candles: Optional[List[List]] = None,
+    recent_trades: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -282,6 +286,9 @@ Maximum coins to trade: {max_coins}
         )
     if drawdown_pct is not None:
         prompt += f"Current account drawdown: {drawdown_pct}%\n"
+    if recent_trades:
+        prompt += f"\nRecent closed trades (last {len(recent_trades)}):\n{json.dumps(recent_trades)}\n"
+        prompt += "Use these outcomes to adapt your strategy. If recent trades are losing, become more conservative.\n"
 
     prompt += f"""
 **Your primary objective is short-term profit.** Use the ATR to set stop-loss and take-profit distances that respect the coin's volatility. Place the stop-loss below a recent swing low or support, and the take-profit near a resistance level or based on a risk:reward ratio of at least 1:2.
@@ -304,7 +311,7 @@ If the position is already in profit, consider trailing the stop.
 - Use these in combination with order book data to time entries.
 
 You MUST include the following risk parameters in the "parameters" object:
-- stop_loss_pct, take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction.
+- stop_loss_pct, take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
 **Fee awareness:** You MUST account for trading fees when setting take-profit and trailing stop distances. Ensure that after deducting fees (both entry and exit), a take-profit or trailing stop exit results in a net profit. The bot will enforce a minimum take-profit percentage of at least 2× the fee rate plus a small margin.

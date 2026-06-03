@@ -26,7 +26,7 @@ from src.database import load_trading_state, save_trading_state, delete_trading_
 logger = logging.getLogger(__name__)
 
 COIN_REVALUATION_INTERVAL = 900  # seconds (15 minutes)
-STRATEGY_INTERVAL = 300           # seconds (5 minutes)
+STRATEGY_INTERVAL = 600           # seconds (10 minutes)
 
 
 class TradingEngine:
@@ -577,7 +577,7 @@ class TradingEngine:
             if settings.OHLCV_TIMEFRAMES:
                 try:
                     ohlcv_data = await asyncio.to_thread(
-                        get_multi_timeframe_ohlcv, self.exchange, symbol, [assigned_tf], limit=24
+                        get_multi_timeframe_ohlcv, self.exchange, symbol, [assigned_tf], limit=50
                     )
                 except Exception as e:
                     logger.warning(f"OHLCV fetch failed for {symbol}: {e}")
@@ -673,6 +673,19 @@ class TradingEngine:
                 amount = pos['amount']
                 unrealized_pnl = (current_price - entry_price) * amount
 
+            # Recent trade outcomes (last 5 closed trades)
+            recent_trades = [
+                t for t in self.trade_history if t.get("side") == "sell"
+            ][-5:]
+            recent_trades_summary = [
+                {
+                    "symbol": t["symbol"],
+                    "realized_pnl": t.get("realized_pnl", 0.0),
+                    "strategy": t.get("strategy_type", "unknown"),
+                }
+                for t in recent_trades
+            ]
+
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
@@ -698,6 +711,7 @@ class TradingEngine:
                 fee_rate=fee_rate,
                 drawdown_pct=perf.get("equity_curve", {}).get("drawdown_pct"),
                 raw_candles=raw_candles,
+                recent_trades=recent_trades_summary,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
@@ -805,6 +819,19 @@ class TradingEngine:
                     if new_stop > pos["stop_loss"]:
                         pos["stop_loss"] = new_stop
                         logger.debug(f"Trailing stop updated for {symbol}: new stop {new_stop:.4f}")
+
+                # Time‑based exit (LLM‑defined max hold time)
+                max_hold = pos.get("max_hold_time_seconds")
+                if max_hold is not None and max_hold > 0:
+                    entry_ts = pos.get("timestamp", 0) / 1000.0  # convert ms to seconds
+                    if time.time() - entry_ts > max_hold:
+                        logger.info(f"Max hold time reached for {symbol} ({max_hold}s). Closing position.")
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"⏰ Max hold time reached for {symbol} – closing position."
+                            )
+                        await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Max hold time"))
+                        continue   # skip further checks for this symbol
 
                 if current_price <= pos["stop_loss"]:
                     logger.info(f"Stop-loss triggered for {symbol} at {current_price}")
@@ -920,6 +947,7 @@ class TradingEngine:
                     self.positions[symbol]["take_profit"] = new_price * (1 + tp_pct)
                     self.positions[symbol]["trailing_stop"] = trailing_stop
                     self.positions[symbol]["trailing_stop_distance_pct"] = trailing_stop_distance_pct
+                    self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
                     self.positions[symbol]["timeframe"] = timeframe
                 else:
                     entry_price = cost_basis / net_base if net_base > 0 else order["price"]
@@ -935,6 +963,7 @@ class TradingEngine:
                         "net_base": net_base,
                         "trailing_stop": trailing_stop,
                         "trailing_stop_distance_pct": trailing_stop_distance_pct,
+                        "max_hold_time_seconds": params.get("max_hold_time_seconds"),
                         "timeframe": timeframe,
                     }
                 order["strategy_type"] = signal.strategy_type
