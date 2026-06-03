@@ -529,7 +529,7 @@ class TradingEngine:
                     if sym not in seen:
                         seen.add(sym)
                         deduped.append(entry)
-                self.current_coins = deduped[: self.max_coins]
+                self.current_coins = deduped[: self.effective_max_coins]
             else:
                 logger.error("LLM coin selection response is not a list.")
         except json.JSONDecodeError:
