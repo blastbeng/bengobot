@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional
+import math
+from typing import List, Dict, Any, Optional, Tuple
 from src.config.settings import settings
 from src.llm.cache import get_cached_ollama_response
 
@@ -8,111 +9,107 @@ logger = logging.getLogger(__name__)
 
 
 def compute_atr(candles: List[List], period: int = 14) -> float:
-    """Compute ATR from OHLCV candles using the LLM."""
-    if len(candles) < 2:
+    """Compute Average True Range from OHLCV candles."""
+    if len(candles) < period + 1:
         return 0.0
-    # Take only the last 30 candles to keep prompt size reasonable
-    recent = candles[-30:]
-    prompt = (
-        f"Given the following OHLCV candles (each: [timestamp, open, high, low, close, volume]), "
-        f"compute the Average True Range (ATR) with period {period}. "
-        f"Return ONLY the numeric ATR value, nothing else.\n\n"
-        f"Candles:\n{json.dumps(recent)}"
-    )
-    try:
-        response = get_cached_ollama_response(prompt, "", ttl=60)
-        return float(response.strip())
-    except Exception as e:
-        logger.warning(f"LLM ATR computation failed: {e}")
+    tr_values = []
+    for i in range(1, len(candles)):
+        high = candles[i][2]
+        low = candles[i][3]
+        prev_close = candles[i - 1][4]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        tr_values.append(tr)
+    if len(tr_values) < period:
         return 0.0
+    recent_tr = tr_values[-period:]
+    return sum(recent_tr) / period
 
 
 def compute_rsi(closes: List[float], period: int = 14) -> Optional[float]:
-    """Compute RSI from closing prices using the LLM."""
+    """Compute RSI from closing prices."""
     if len(closes) < period + 1:
         return None
-    recent = closes[-50:]  # enough for RSI calculation
-    prompt = (
-        f"Given the following closing prices, compute the Relative Strength Index (RSI) with period {period}. "
-        f"Return ONLY the numeric RSI value, nothing else.\n\n"
-        f"Closing prices:\n{json.dumps(recent)}"
-    )
-    try:
-        response = get_cached_ollama_response(prompt, "", ttl=60)
-        return float(response.strip())
-    except Exception as e:
-        logger.warning(f"LLM RSI computation failed: {e}")
-        return None
+    gains = 0.0
+    losses = 0.0
+    for i in range(1, period + 1):
+        diff = closes[i] - closes[i - 1]
+        if diff > 0:
+            gains += diff
+        else:
+            losses -= diff
+    avg_gain = gains / period
+    avg_loss = losses / period
+    if avg_loss == 0:
+        rsi = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+    # Use smoothed averages for the remaining data
+    for i in range(period + 1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        gain = max(diff, 0)
+        loss = -min(diff, 0)
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+        if avg_loss == 0:
+            rsi = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi
 
 
 def compute_ema(data: List[float], period: int) -> List[float]:
-    """Compute Exponential Moving Average using the LLM."""
+    """Compute Exponential Moving Average."""
     if len(data) < period:
         return []
-    recent = data[-100:]  # limit input size
-    prompt = (
-        f"Given the following data points, compute the Exponential Moving Average (EMA) with period {period}. "
-        f"Return ONLY a JSON array of the EMA values, nothing else.\n\n"
-        f"Data:\n{json.dumps(recent)}"
-    )
-    try:
-        response = get_cached_ollama_response(prompt, "", ttl=60)
-        ema_values = json.loads(response.strip())
-        if isinstance(ema_values, list) and all(isinstance(v, (int, float)) for v in ema_values):
-            return ema_values
-        else:
-            raise ValueError(f"Unexpected response format: {response}")
-    except Exception as e:
-        logger.warning(f"LLM EMA computation failed: {e}")
-        return []
+    ema_values = []
+    # SMA for the first value
+    sma = sum(data[:period]) / period
+    ema_values.append(sma)
+    multiplier = 2.0 / (period + 1)
+    for i in range(period, len(data)):
+        ema = (data[i] - ema_values[-1]) * multiplier + ema_values[-1]
+        ema_values.append(ema)
+    return ema_values
 
 
-def compute_macd(closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9):
-    """Compute MACD line, signal line, and histogram using the LLM. Returns (macd, signal, hist) or Nones."""
+def compute_macd(
+    closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """Compute MACD line, signal line, and histogram."""
     if len(closes) < slow + signal:
         return None, None, None
-    recent = closes[-100:]  # enough for MACD
-    prompt = (
-        f"Given the following closing prices, compute the MACD (Moving Average Convergence Divergence) "
-        f"with fast period {fast}, slow period {slow}, and signal period {signal}. "
-        f"Return ONLY three numbers separated by commas: macd_line, signal_line, histogram. "
-        f"Example: 0.0012,0.0008,0.0004\n\n"
-        f"Closing prices:\n{json.dumps(recent)}"
-    )
-    try:
-        response = get_cached_ollama_response(prompt, "", ttl=60)
-        parts = response.strip().split(",")
-        if len(parts) == 3:
-            return float(parts[0]), float(parts[1]), float(parts[2])
-        else:
-            raise ValueError(f"Unexpected response format: {response}")
-    except Exception as e:
-        logger.warning(f"LLM MACD computation failed: {e}")
+    ema_fast = compute_ema(closes, fast)
+    ema_slow = compute_ema(closes, slow)
+    if not ema_fast or not ema_slow:
         return None, None, None
+    # Align lengths: MACD line = fast EMA - slow EMA (use the shorter length)
+    min_len = min(len(ema_fast), len(ema_slow))
+    macd_line = [ema_fast[i] - ema_slow[i] for i in range(min_len)]
+    signal_line = compute_ema(macd_line, signal)
+    if not signal_line:
+        return None, None, None
+    # Return the latest values
+    macd_val = macd_line[-1]
+    signal_val = signal_line[-1]
+    hist = macd_val - signal_val
+    return macd_val, signal_val, hist
 
 
-def compute_bollinger_bands(closes: List[float], period: int = 20, std_dev: float = 2.0):
-    """Compute Bollinger Bands (upper, middle, lower) using the LLM."""
+def compute_bollinger_bands(
+    closes: List[float], period: int = 20, std_dev: float = 2.0
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """Compute Bollinger Bands (upper, middle, lower)."""
     if len(closes) < period:
         return None, None, None
-    recent = closes[-50:]  # enough for BB
-    prompt = (
-        f"Given the following closing prices, compute the Bollinger Bands with period {period} "
-        f"and standard deviation multiplier {std_dev}. "
-        f"Return ONLY three numbers separated by commas: upper_band, middle_band, lower_band. "
-        f"Example: 105.2,100.0,94.8\n\n"
-        f"Closing prices:\n{json.dumps(recent)}"
-    )
-    try:
-        response = get_cached_ollama_response(prompt, "", ttl=60)
-        parts = response.strip().split(",")
-        if len(parts) == 3:
-            return float(parts[0]), float(parts[1]), float(parts[2])
-        else:
-            raise ValueError(f"Unexpected response format: {response}")
-    except Exception as e:
-        logger.warning(f"LLM Bollinger Bands computation failed: {e}")
-        return None, None, None
+    recent = closes[-period:]
+    middle = sum(recent) / period
+    variance = sum((x - middle) ** 2 for x in recent) / period
+    std = math.sqrt(variance)
+    upper = middle + std_dev * std
+    lower = middle - std_dev * std
+    return upper, middle, lower
 
 SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. Your primary goal is to generate consistent short-term profit while preserving capital. You must avoid large drawdowns and only trade when there is a clear edge.
 
