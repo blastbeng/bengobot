@@ -29,6 +29,28 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS trade_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id TEXT,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            type TEXT,
+            amount REAL NOT NULL,
+            price REAL NOT NULL,
+            cost REAL,
+            fee_cost REAL,
+            fee_currency TEXT,
+            realized_pnl REAL,
+            cost_basis REAL,
+            strategy_type TEXT,
+            note TEXT,
+            status TEXT,
+            timestamp INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trade_history_symbol ON trade_history(symbol);
+        CREATE INDEX IF NOT EXISTS idx_trade_history_timestamp ON trade_history(timestamp);
     """)
     conn.commit()
     conn.close()
