@@ -291,7 +291,7 @@
     </div>
 
     <script>
-        const wsUrl = `ws://${location.host}/ws`;
+        const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
         let ws;
         function connect() {
             ws = new WebSocket(wsUrl);
