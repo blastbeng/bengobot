@@ -8,13 +8,7 @@ class Signal:
     confidence: float
     reasoning: str
     strategy_type: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None
-    # Richer strategy parameters
-    stop_loss_pct: Optional[float] = None
-    take_profit_pct: Optional[float] = None
-    trailing_stop: bool = False
-    trailing_stop_distance_pct: Optional[float] = None
-    position_size_fraction: Optional[float] = None
+    strategy_params: Optional[Dict[str, Any]] = None   # LLM-defined parameters
 
 
 class Strategy:
