@@ -49,8 +49,7 @@ class TradingEngine:
         else:
             self.trader = LiveTrader(self.exchange)
 
-        self.current_coins: List[str] = []
-        self.coin_timeframes: Dict[str, str] = {}  # symbol -> assigned timeframe
+        self.current_coins: List[Dict[str, str]] = []   # each dict: {"symbol": ..., "timeframe": ...}
         self.positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position info
         self.trade_history: List[Dict[str, Any]] = []
         self.initial_balance: float = 0.0
@@ -200,10 +199,11 @@ class TradingEngine:
         """Detect and handle external changes: delisted coins, externally sold positions."""
         # --- Delisted coins ---
         available_pairs = await asyncio.to_thread(get_available_pairs, self.exchange, self.base_currency)
-        for coin in list(self.current_coins):
+        for entry in list(self.current_coins):
+            coin = entry["symbol"]
             if coin not in available_pairs:
                 logger.warning(f"Coin {coin} no longer available. Removing from tracking.")
-                self.current_coins.remove(coin)
+                self.current_coins.remove(entry)
                 if coin in self.positions:
                     pos = self.positions.pop(coin)
                     trade = {
@@ -271,8 +271,13 @@ class TradingEngine:
         """Load current coins, positions, trade history, and initial balance from SQLite."""
         state = load_trading_state()
 
-        self.current_coins = state.get("current_coins", [])
-        self.coin_timeframes = state.get("coin_timeframes", {})
+        raw_coins = state.get("current_coins", [])
+        # Convert old format (list of strings) to new format if needed
+        if raw_coins and isinstance(raw_coins[0], str):
+            default_tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
+            self.current_coins = [{"symbol": s, "timeframe": default_tf} for s in raw_coins]
+        else:
+            self.current_coins = raw_coins
         self.positions = state.get("positions", {})
         # Ensure risk fields exist (for backward compatibility)
         for pos in self.positions.values():
@@ -300,7 +305,6 @@ class TradingEngine:
     async def _save_state(self):
         """Persist current coins, positions, and trade history to SQLite."""
         await asyncio.to_thread(save_trading_state, "current_coins", self.current_coins)
-        await asyncio.to_thread(save_trading_state, "coin_timeframes", self.coin_timeframes)
         await asyncio.to_thread(save_trading_state, "positions", self.positions)
         # Keep only the last 1000 trades to avoid unbounded growth
         self.trade_history = self.trade_history[-1000:]
