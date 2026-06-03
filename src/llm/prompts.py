@@ -149,6 +149,10 @@ def build_strategy_prompt(
     order_book_imbalance: Optional[float] = None,
     unrealized_pnl: Optional[float] = None,
     position_info: Optional[Dict[str, Any]] = None,
+    spread_pct: Optional[float] = None,
+    bid_wall_volume: Optional[float] = None,
+    ask_wall_volume: Optional[float] = None,
+    order_book_pressure: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -167,12 +171,28 @@ Maximum coins to trade: {max_coins}
         prompt += f"ATR (14-period, {assigned_timeframe or 'default'}): {atr:.6f}\n"
     if order_book_imbalance is not None:
         prompt += f"Order book imbalance (bid_vol / ask_vol): {order_book_imbalance:.2f} ( >1 = buying pressure)\n"
+    if spread_pct is not None:
+        prompt += f"Spread: {spread_pct:.4f}%\n"
+    if bid_wall_volume is not None:
+        prompt += f"Bid wall volume (within 1% of best bid): {bid_wall_volume:.4f}\n"
+    if ask_wall_volume is not None:
+        prompt += f"Ask wall volume (within 1% of best ask): {ask_wall_volume:.4f}\n"
+    if order_book_pressure is not None:
+        prompt += f"Order book pressure (0 = strong sell, 1 = strong buy): {order_book_pressure:.2f}\n"
     if unrealized_pnl is not None and position_info:
         prompt += f"Current position unrealized P&L: {unrealized_pnl:.2f} {symbol.split('/')[1]}\n"
         prompt += f"Position details: entry price {position_info.get('price')}, amount {position_info.get('amount')}\n"
 
     prompt += f"""
-**Your primary objective is short-term profit.** Use the ATR to set stop-loss and take-profit distances that respect the coin's volatility. Place the stop-loss below a recent swing low or support, and the take-profit near a resistance level or based on a risk:reward ratio of at least 1:2. If the order book shows strong buying pressure, you may tighten the stop. If the position is already in profit, consider trailing the stop.
+**Your primary objective is short-term profit.** Use the ATR to set stop-loss and take-profit distances that respect the coin's volatility. Place the stop-loss below a recent swing low or support, and the take-profit near a resistance level or based on a risk:reward ratio of at least 1:2.
+
+Interpret the order book metrics:
+- A high spread (>0.5%) suggests low liquidity – be cautious with large orders.
+- A bid/ask volume ratio > 1.5 indicates strong buying pressure (favor BUY); < 0.67 indicates selling pressure (favor SELL).
+- Large bid wall volume relative to ask wall volume suggests support; large ask wall suggests resistance.
+- Order book pressure near 1.0 signals overwhelming buying interest; near 0.0 signals overwhelming selling interest.
+
+If the position is already in profit, consider trailing the stop.
 
 You MUST include the following risk parameters in the "parameters" object:
 - stop_loss_pct, take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction.

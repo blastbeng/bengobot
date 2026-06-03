@@ -569,6 +569,32 @@ class TradingEngine:
             asks_vol = sum(ask[1] for ask in order_book.get('asks', [])[:5])
             order_book_imbalance = bids_vol / asks_vol if asks_vol > 0 else None
 
+            # --- Enhanced order book metrics ---
+            spread_pct = None
+            bid_wall_volume = None
+            ask_wall_volume = None
+            order_book_pressure = None
+
+            bids = order_book.get('bids', [])
+            asks = order_book.get('asks', [])
+            if bids and asks:
+                best_bid = bids[0][0]
+                best_ask = asks[0][0]
+                mid = (best_bid + best_ask) / 2
+                if mid > 0:
+                    spread_pct = ((best_ask - best_bid) / mid) * 100
+
+                # Wall volumes: cumulative volume within 1% of best price
+                bid_threshold = best_bid * 0.99
+                ask_threshold = best_ask * 1.01
+                bid_wall_volume = sum(bid[1] for bid in bids if bid[0] >= bid_threshold)
+                ask_wall_volume = sum(ask[1] for ask in asks if ask[0] <= ask_threshold)
+
+                # Order book pressure: bid_wall / (bid_wall + ask_wall)
+                total_wall = bid_wall_volume + ask_wall_volume
+                if total_wall > 0:
+                    order_book_pressure = bid_wall_volume / total_wall
+
             # Unrealized P&L for current position (if any)
             unrealized_pnl = None
             position_info = None
@@ -595,6 +621,10 @@ class TradingEngine:
                 order_book_imbalance=order_book_imbalance,
                 unrealized_pnl=unrealized_pnl,
                 position_info=position_info,
+                spread_pct=spread_pct,
+                bid_wall_volume=bid_wall_volume,
+                ask_wall_volume=ask_wall_volume,
+                order_book_pressure=order_book_pressure,
             )
             response = await asyncio.to_thread(get_cached_ollama_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
