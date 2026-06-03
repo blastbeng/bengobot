@@ -26,9 +26,6 @@ logger = logging.getLogger(__name__)
 
 COIN_REVALUATION_INTERVAL = 300  # seconds (5 minutes)
 STRATEGY_INTERVAL = 60           # seconds (1 minute)
-POSITION_SIZE_FRACTION = 0.1     # fraction of base currency balance per trade
-STOP_LOSS_PCT = 0.05            # 5% below entry price
-TAKE_PROFIT_PCT = 0.10          # 10% above entry price
 
 
 class TradingEngine:
@@ -108,8 +105,9 @@ class TradingEngine:
                         'cost_basis': cost_basis,
                         'net_base': net_base,
                         'timestamp': trade['timestamp'],
-                        'stop_loss': entry_price * (1 - STOP_LOSS_PCT),
-                        'take_profit': entry_price * (1 + TAKE_PROFIT_PCT),
+                        # stop_loss and take_profit will be set by the LLM later
+                        'stop_loss': None,
+                        'take_profit': None,
                     }
             elif side == 'sell':
                 # Update balances
@@ -289,6 +287,17 @@ class TradingEngine:
                 )
                 self.positions[symbol]["amount"] = actual_balance
 
+        # --- Close positions that were loaded without LLM risk parameters ---
+        for symbol, pos in list(self.positions.items()):
+            if pos.get("_force_close"):
+                logger.info(f"Forcing close of {symbol} because it lacks LLM risk parameters.")
+                if self.notifier:
+                    await self.notifier.send_notification(
+                        f"🔻 Closing {symbol} – missing LLM risk parameters."
+                    )
+                signal = Signal(action="SELL", confidence=1.0, reasoning="Missing LLM risk parameters")
+                await self._execute_signal(symbol, signal)
+
     def _load_state(self):
         """Load current coins, positions, trade history, and initial balance from SQLite."""
         state = load_trading_state()
@@ -301,15 +310,16 @@ class TradingEngine:
         else:
             self.current_coins = raw_coins
         self.positions = state.get("positions", {})
-        # Ensure risk fields exist (for backward compatibility)
-        for pos in self.positions.values():
-            if "stop_loss" not in pos:
-                pos["stop_loss"] = pos["price"] * (1 - STOP_LOSS_PCT)
-            if "take_profit" not in pos:
-                pos["take_profit"] = pos["price"] * (1 + TAKE_PROFIT_PCT)
-            # New fields defaults
-            pos.setdefault("trailing_stop", False)
-            pos.setdefault("trailing_stop_distance_pct", None)
+        # Remove any position that lacks LLM-defined risk parameters.
+        # Such positions cannot be managed safely.
+        for symbol in list(self.positions.keys()):
+            pos = self.positions[symbol]
+            if "stop_loss" not in pos or "take_profit" not in pos:
+                logger.warning(
+                    f"Position for {symbol} is missing stop_loss/take_profit. "
+                    f"It will be closed because all risk parameters must come from the LLM."
+                )
+                pos["_force_close"] = True
 
         self.trade_history = state.get("trade_history", [])
 
@@ -619,6 +629,10 @@ class TradingEngine:
         """Check open positions and close if stop-loss, take-profit, or trailing stop is hit."""
         for symbol, pos in list(self.positions.items()):
             try:
+                # Skip positions that don't have LLM-defined risk parameters yet
+                if pos.get("stop_loss") is None or pos.get("take_profit") is None:
+                    continue
+
                 ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
                 current_price = ticker['last']
 
