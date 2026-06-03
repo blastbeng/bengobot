@@ -43,7 +43,6 @@ def status():
     paused = redis.get("trading:paused") == "1"
     return {
         "current_coins": engine.current_coins,
-        "coin_timeframes": getattr(engine, 'coin_timeframes', {}),
         "positions": engine.positions,
         "balances": engine.trader.fetch_balance(),
         "paused": paused,
