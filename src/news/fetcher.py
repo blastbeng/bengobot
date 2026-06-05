@@ -106,6 +106,12 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     if "cryptocompare" in settings.NEWS_SOURCES:
         articles.extend(_fetch_cryptocompare(symbol))
 
+    if "lunarcrush" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_lunarcrush(symbol))
+
+    if "santiment" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_santiment(symbol))
+
     # Deduplicate by URL
     seen = set()
     unique = []
@@ -480,6 +486,93 @@ def _fetch_cryptocompare(symbol: str) -> List[Dict[str, str]]:
         return articles
     except Exception as e:
         logger.warning(f"CryptoCompare fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# LunarCrush API
+# ---------------------------------------------------------------------------
+
+def _fetch_lunarcrush(symbol: str) -> List[Dict[str, str]]:
+    if not settings.LUNARCRUSH_API_KEY:
+        return []
+    try:
+        # Extract base currency (e.g., BTC from BTC/USDT)
+        base = symbol.split("/")[0]
+        url = "https://lunarcrush.com/api/v2"
+        params = {
+            "data": "assets",
+            "key": settings.LUNARCRUSH_API_KEY,
+            "symbol": base,
+        }
+        response = httpx.get(url, params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        articles = []
+        # The response contains a "data" list with one asset; get its "news" array
+        asset_data = data.get("data", [])
+        if asset_data:
+            news_items = asset_data[0].get("news", [])
+            for item in news_items[:settings.LUNARCRUSH_MAX_ARTICLES]:
+                title = item.get("title", "")
+                summary = item.get("body", "") or item.get("description", "")
+                text = f"{title} {summary}"
+                sentiment = _analyze_sentiment(text)
+                if not _is_relevant(symbol, title, summary[:300]):
+                    continue
+                articles.append({
+                    "title": title,
+                    "source": item.get("source", "LunarCrush"),
+                    "url": item.get("url", ""),
+                    "published_at": item.get("created_at", ""),
+                    "summary": summary[:300],
+                    "sentiment": sentiment,
+                })
+        return articles
+    except Exception as e:
+        logger.warning(f"LunarCrush fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Santiment API
+# ---------------------------------------------------------------------------
+
+def _fetch_santiment(symbol: str) -> List[Dict[str, str]]:
+    if not settings.SANTIMENT_API_KEY:
+        return []
+    try:
+        # Santiment uses asset slugs (e.g., "bitcoin", "ethereum"). We'll map common symbols.
+        # For simplicity, we'll use the lowercase base currency as slug.
+        base = symbol.split("/")[0].lower()
+        url = "https://api.santiment.net/news"
+        params = {
+            "asset": base,
+            "limit": settings.SANTIMENT_MAX_ARTICLES,
+        }
+        headers = {"Authorization": f"Apikey {settings.SANTIMENT_API_KEY}"}
+        response = httpx.get(url, params=params, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        articles = []
+        for item in data:
+            title = item.get("title", "")
+            summary = item.get("description", "") or item.get("content", "")
+            text = f"{title} {summary}"
+            sentiment = _analyze_sentiment(text)
+            if not _is_relevant(symbol, title, summary[:300]):
+                continue
+            articles.append({
+                "title": title,
+                "source": item.get("source", {}).get("name", "Santiment"),
+                "url": item.get("url", ""),
+                "published_at": item.get("published_at", ""),
+                "summary": summary[:300],
+                "sentiment": sentiment,
+            })
+        return articles
+    except Exception as e:
+        logger.warning(f"Santiment fetch failed for {symbol}: {e}")
         return []
 
 

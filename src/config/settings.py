@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     @field_validator("NEWS_SOURCES")
     @classmethod
     def validate_news_sources(cls, v: list[str]) -> list[str]:
-        allowed = {"newsapi", "twitter", "reddit", "facebook", "youtube", "cryptopanic", "coingecko", "cryptocompare"}
+        allowed = {"newsapi", "twitter", "reddit", "facebook", "youtube", "cryptopanic", "coingecko", "cryptocompare", "lunarcrush", "santiment"}
         for source in v:
             if source not in allowed:
                 raise ValueError(f"Invalid news source: {source}. Allowed: {allowed}")
@@ -90,6 +90,10 @@ class Settings(BaseSettings):
                 raise ValueError("CRYPTOPANIC_API_KEY is required when cryptopanic source is selected")
             if "cryptocompare" in self.NEWS_SOURCES and not self.CRYPTOCOMPARE_API_KEY:
                 raise ValueError("CRYPTOCOMPARE_API_KEY is required when cryptocompare source is selected")
+            if "lunarcrush" in self.NEWS_SOURCES and not self.LUNARCRUSH_API_KEY:
+                raise ValueError("LUNARCRUSH_API_KEY is required when lunarcrush source is selected")
+            if "santiment" in self.NEWS_SOURCES and not self.SANTIMENT_API_KEY:
+                raise ValueError("SANTIMENT_API_KEY is required when santiment source is selected")
         return self
 
     # Ollama
@@ -153,6 +157,14 @@ class Settings(BaseSettings):
     # CryptoCompare News API
     CRYPTOCOMPARE_API_KEY: Optional[str] = None
     CRYPTOCOMPARE_MAX_ARTICLES: int = 5
+
+    # LunarCrush API
+    LUNARCRUSH_API_KEY: Optional[str] = None
+    LUNARCRUSH_MAX_ARTICLES: int = 5
+
+    # Santiment API
+    SANTIMENT_API_KEY: Optional[str] = None
+    SANTIMENT_MAX_ARTICLES: int = 5
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None
