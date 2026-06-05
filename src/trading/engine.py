@@ -98,6 +98,15 @@ class TradingEngine:
         except Exception as e:
             logger.warning(f"Initial news fetch error: {e}")
 
+        # Log current news table status
+        try:
+            from src.database import get_news_for_symbol
+            for sym in symbols_to_refresh:
+                articles = get_news_for_symbol(sym, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                logger.info(f"News DB check: {sym} has {len(articles)} articles.")
+        except Exception as e:
+            logger.warning(f"News DB status check failed: {e}")
+
         while True:
             try:
                 cycle_start = time.time()

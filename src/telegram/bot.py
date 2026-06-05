@@ -37,6 +37,7 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("profit", self.cmd_profit))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         self.app.add_handler(CommandHandler("news", self.cmd_news))
+        self.app.add_handler(CommandHandler("news_status", self.cmd_news_status))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_button))
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -218,6 +219,20 @@ class TelegramBot:
                 await update.message.reply_text(full_text[i:i+4000], parse_mode="Markdown")
         else:
             await update.message.reply_text(full_text, parse_mode="Markdown")
+
+    async def cmd_news_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show news article counts for tracked coins."""
+        coins = self.engine.current_coins
+        if not coins:
+            await update.message.reply_text("No coins currently tracked.")
+            return
+
+        msg = "<b>📰 News Article Counts</b>\n\n"
+        for entry in coins:
+            symbol = entry["symbol"]
+            articles = get_news_for_symbol(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+            msg += f"<b>{symbol}</b>: {len(articles)} articles\n"
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
