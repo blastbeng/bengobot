@@ -3,6 +3,10 @@ import logging
 import math
 from typing import List, Dict, Any, Optional, Tuple
 from src.config.settings import settings
+try:
+    from src.news.fetcher import fetch_news_for_symbol
+except ImportError:
+    fetch_news_for_symbol = None
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +229,19 @@ def build_coin_selection_prompt(
                     }
                 ohlcv_summary[symbol] = summary
 
+    # --- News section ---
+    news_section = ""
+    if settings.NEWS_ENABLED and fetch_news_for_symbol is not None:
+        news_lines = []
+        pairs_to_check = available_pairs[:20]
+        for pair in pairs_to_check:
+            articles = fetch_news_for_symbol(pair)
+            if articles:
+                formatted = _format_news_for_prompt(articles)
+                news_lines.append(f"**{pair}**\n{formatted}")
+        if news_lines:
+            news_section = "Recent news for top coins:\n\n" + "\n\n".join(news_lines)
+
     prompt = f"""Current base currency: {base_currency}
 Your available {base_currency} balance: {base_balance:.2f}
 Maximum number of coins to trade: {max_coins}
@@ -246,6 +263,8 @@ Return a JSON array of objects, each with "symbol" and "timeframe" fields. The t
         prompt += f"\nMulti-timeframe OHLCV summary (price change %, high, low, volume):\n{json.dumps(ohlcv_summary, indent=2)}\n"
     if market_trend:
         prompt += f"\nOverall market trend ({market_trend['symbol']}): 24h change {market_trend.get('change_24h')}%, last price {market_trend.get('last')}\n"
+    if news_section:
+        prompt += f"\n{news_section}\n"
     if performance:
         perf_text = f"""
 Historical Performance Data:

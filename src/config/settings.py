@@ -49,6 +49,15 @@ class Settings(BaseSettings):
             raise ValueError("LLM_PROVIDER must be 'ollama' or 'openai'")
         return v
 
+    @field_validator("NEWS_SOURCES")
+    @classmethod
+    def validate_news_sources(cls, v: list[str]) -> list[str]:
+        allowed = {"newsapi", "twitter", "reddit"}
+        for source in v:
+            if source not in allowed:
+                raise ValueError(f"Invalid news source: {source}. Allowed: {allowed}")
+        return v
+
     # Paper trading
     PAPER_INITIAL_BALANCE: float = 10000.0
 
@@ -66,6 +75,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "EXCHANGE_API_KEY and EXCHANGE_SECRET are required when TRADING_MODE='live'"
                 )
+        if self.NEWS_ENABLED:
+            if "newsapi" in self.NEWS_SOURCES and not self.NEWS_API_KEY:
+                raise ValueError("NEWS_API_KEY is required when NEWS_ENABLED and newsapi source is selected")
+            if "twitter" in self.NEWS_SOURCES and not self.TWITTER_BEARER_TOKEN:
+                raise ValueError("TWITTER_BEARER_TOKEN is required when twitter source is selected")
+            if "reddit" in self.NEWS_SOURCES and (not self.REDDIT_CLIENT_ID or not self.REDDIT_CLIENT_SECRET):
+                raise ValueError("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are required when reddit source is selected")
         return self
 
     # Ollama
@@ -92,6 +108,16 @@ class Settings(BaseSettings):
     # News
     NEWS_ENABLED: bool = False
     NEWS_UPDATE_INTERVAL_MINUTES: int = 15
+
+    # News sources
+    NEWS_SOURCES: list[str] = ["newsapi"]  # supported: "newsapi", "twitter", "reddit"
+    NEWS_API_KEY: Optional[str] = None       # for NewsAPI.org
+    TWITTER_BEARER_TOKEN: Optional[str] = None
+    REDDIT_CLIENT_ID: Optional[str] = None
+    REDDIT_CLIENT_SECRET: Optional[str] = None
+    REDDIT_USER_AGENT: str = "trading-bot/1.0"
+    NEWS_MAX_ARTICLES_PER_SYMBOL: int = 5
+    NEWS_CACHE_TTL_SECONDS: int = 900        # 15 minutes
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None
