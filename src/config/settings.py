@@ -42,6 +42,13 @@ class Settings(BaseSettings):
             raise ValueError("OHLCV_TIMEFRAMES must be a list of strings")
         return v
 
+    @field_validator("LLM_PROVIDER")
+    @classmethod
+    def validate_llm_provider(cls, v: str) -> str:
+        if v not in ("ollama", "openai"):
+            raise ValueError("LLM_PROVIDER must be 'ollama' or 'openai'")
+        return v
+
     # Paper trading
     PAPER_INITIAL_BALANCE: float = 10000.0
 
@@ -53,11 +60,16 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def check_live_credentials(self):
+    def check_credentials(self):
         if self.TRADING_MODE == "live":
             if not self.EXCHANGE_API_KEY or not self.EXCHANGE_SECRET:
                 raise ValueError(
                     "EXCHANGE_API_KEY and EXCHANGE_SECRET are required when TRADING_MODE='live'"
+                )
+        if self.LLM_PROVIDER == "openai":
+            if not self.OPENAI_API_KEY:
+                raise ValueError(
+                    "OPENAI_API_KEY is required when LLM_PROVIDER='openai'"
                 )
         return self
 
@@ -65,6 +77,14 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "deepseek-v4-flash"
     OLLAMA_API_KEY: Optional[str] = None
+
+    # LLM Provider selection
+    LLM_PROVIDER: str = "ollama"   # "ollama" or "openai"
+
+    # OpenAI-compatible API
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = "gpt-4o"
 
     # Redis
     REDIS_HOST: str = "redis"
