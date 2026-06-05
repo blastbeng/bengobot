@@ -3,7 +3,7 @@ import logging
 import math
 from typing import List, Dict, Any, Optional, Tuple
 from src.config.settings import settings
-from src.llm.cache import get_cached_ollama_response
+from src.llm.cache import get_cached_llm_response
 
 logger = logging.getLogger(__name__)
 
