@@ -112,6 +112,12 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     if "santiment" in settings.NEWS_SOURCES:
         articles.extend(_fetch_santiment(symbol))
 
+    if "messari" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_messari(symbol))
+
+    if "coinmarketcap" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_coinmarketcap(symbol))
+
     # Deduplicate by URL
     seen = set()
     unique = []
@@ -573,6 +579,82 @@ def _fetch_santiment(symbol: str) -> List[Dict[str, str]]:
         return articles
     except Exception as e:
         logger.warning(f"Santiment fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Messari API
+# ---------------------------------------------------------------------------
+
+def _fetch_messari(symbol: str) -> List[Dict[str, str]]:
+    if not settings.MESSARI_API_KEY:
+        return []
+    try:
+        base = symbol.split("/")[0].lower()
+        url = f"https://data.messari.io/api/v1/news/{base}"
+        headers = {"x-messari-api-key": settings.MESSARI_API_KEY}
+        response = httpx.get(url, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        articles = []
+        for item in data.get("data", [])[:settings.MESSARI_MAX_ARTICLES]:
+            title = item.get("title", "")
+            summary = item.get("content", "") or item.get("description", "")
+            text = f"{title} {summary}"
+            sentiment = _analyze_sentiment(text)
+            if not _is_relevant(symbol, title, summary[:300]):
+                continue
+            articles.append({
+                "title": title,
+                "source": item.get("source", {}).get("name", "Messari"),
+                "url": item.get("url", ""),
+                "published_at": item.get("published_at", ""),
+                "summary": summary[:300],
+                "sentiment": sentiment,
+            })
+        return articles
+    except Exception as e:
+        logger.warning(f"Messari fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# CoinMarketCap API
+# ---------------------------------------------------------------------------
+
+def _fetch_coinmarketcap(symbol: str) -> List[Dict[str, str]]:
+    if not settings.COINMARKETCAP_API_KEY:
+        return []
+    try:
+        base = symbol.split("/")[0]
+        url = "https://pro-api.coinmarketcap.com/v1/content/latest"
+        params = {
+            "symbol": base,
+            "limit": settings.COINMARKETCAP_MAX_ARTICLES,
+        }
+        headers = {"X-CMC_PRO_API_KEY": settings.COINMARKETCAP_API_KEY}
+        response = httpx.get(url, params=params, headers=headers, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        articles = []
+        for item in data.get("data", []):
+            title = item.get("title", "")
+            summary = item.get("content", "") or item.get("description", "")
+            text = f"{title} {summary}"
+            sentiment = _analyze_sentiment(text)
+            if not _is_relevant(symbol, title, summary[:300]):
+                continue
+            articles.append({
+                "title": title,
+                "source": item.get("source", {}).get("name", "CoinMarketCap"),
+                "url": item.get("url", ""),
+                "published_at": item.get("released_at", ""),
+                "summary": summary[:300],
+                "sentiment": sentiment,
+            })
+        return articles
+    except Exception as e:
+        logger.warning(f"CoinMarketCap fetch failed for {symbol}: {e}")
         return []
 
 

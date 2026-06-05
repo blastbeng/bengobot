@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     @field_validator("NEWS_SOURCES")
     @classmethod
     def validate_news_sources(cls, v: list[str]) -> list[str]:
-        allowed = {"newsapi", "twitter", "reddit", "facebook", "youtube", "cryptopanic", "coingecko", "cryptocompare", "lunarcrush", "santiment"}
+        allowed = {"newsapi", "twitter", "reddit", "facebook", "youtube", "cryptopanic", "coingecko", "cryptocompare", "lunarcrush", "santiment", "messari", "coinmarketcap"}
         for source in v:
             if source not in allowed:
                 raise ValueError(f"Invalid news source: {source}. Allowed: {allowed}")
@@ -94,6 +94,10 @@ class Settings(BaseSettings):
                 raise ValueError("LUNARCRUSH_API_KEY is required when lunarcrush source is selected")
             if "santiment" in self.NEWS_SOURCES and not self.SANTIMENT_API_KEY:
                 raise ValueError("SANTIMENT_API_KEY is required when santiment source is selected")
+            if "messari" in self.NEWS_SOURCES and not self.MESSARI_API_KEY:
+                raise ValueError("MESSARI_API_KEY is required when messari source is selected")
+            if "coinmarketcap" in self.NEWS_SOURCES and not self.COINMARKETCAP_API_KEY:
+                raise ValueError("COINMARKETCAP_API_KEY is required when coinmarketcap source is selected")
         return self
 
     # Ollama
@@ -141,6 +145,10 @@ class Settings(BaseSettings):
         "https://www.coindesk.com/arc/outboundfeeds/rss/",
         "https://cointelegraph.com/rss",
         "https://decrypt.co/feed",
+        "https://www.theblock.co/rss",
+        "https://cryptoslate.com/feed/",
+        "https://ambcrypto.com/feed/",
+        "https://bitcoinmagazine.com/.rss/full/",
     ]
 
     # YouTube Data API v3
@@ -165,6 +173,14 @@ class Settings(BaseSettings):
     # Santiment API
     SANTIMENT_API_KEY: Optional[str] = None
     SANTIMENT_MAX_ARTICLES: int = 5
+
+    # Messari API
+    MESSARI_API_KEY: Optional[str] = None
+    MESSARI_MAX_ARTICLES: int = 5
+
+    # CoinMarketCap API
+    COINMARKETCAP_API_KEY: Optional[str] = None
+    COINMARKETCAP_MAX_ARTICLES: int = 5
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None
