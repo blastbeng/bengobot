@@ -1,14 +1,32 @@
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Any, Optional
 import hashlib
 import httpx
 import json
 import feedparser
 
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
 from src.config.settings import settings
 from src.utils.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
+
+_sentiment_analyzer = SentimentIntensityAnalyzer()
+
+
+def _analyze_sentiment(text: str) -> Dict[str, Any]:
+    """Return sentiment label and compound score for a text."""
+    scores = _sentiment_analyzer.polarity_scores(text)
+    compound = scores['compound']
+    if compound >= 0.05:
+        label = "positive"
+    elif compound <= -0.05:
+        label = "negative"
+    else:
+        label = "neutral"
+    return {"label": label, "compound": round(compound, 4)}
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -100,12 +118,15 @@ def _fetch_newsapi(symbol: str) -> List[Dict[str, str]]:
         )
         articles = []
         for art in response.get("articles", []):
+            text = f"{art.get('title', '')} {art.get('description', '')}"
+            sentiment = _analyze_sentiment(text)
             articles.append({
                 "title": art.get("title", ""),
                 "source": art.get("source", {}).get("name", "NewsAPI"),
                 "url": art.get("url", ""),
                 "published_at": art.get("publishedAt", ""),
                 "summary": art.get("description", "") or "",
+                "sentiment": sentiment,
             })
         return articles
     except Exception as e:
@@ -136,12 +157,14 @@ def _fetch_twitter(symbol: str) -> List[Dict[str, str]]:
         articles = []
         if tweets.data:
             for tweet in tweets.data:
+                sentiment = _analyze_sentiment(tweet.text)
                 articles.append({
                     "title": tweet.text[:100],
                     "source": "Twitter",
                     "url": f"https://twitter.com/i/web/status/{tweet.id}",
                     "published_at": str(tweet.created_at) if tweet.created_at else "",
                     "summary": tweet.text,
+                    "sentiment": sentiment,
                 })
         return articles
     except Exception as e:
@@ -175,12 +198,15 @@ def _fetch_reddit(symbol: str) -> List[Dict[str, str]]:
         )
         articles = []
         for sub in submissions:
+            text = f"{sub.title} {sub.selftext[:300] if sub.selftext else ''}"
+            sentiment = _analyze_sentiment(text)
             articles.append({
                 "title": sub.title,
                 "source": f"Reddit r/{sub.subreddit.display_name}",
                 "url": f"https://reddit.com{sub.permalink}",
                 "published_at": str(sub.created_utc),
                 "summary": sub.selftext[:300] if sub.selftext else sub.title,
+                "sentiment": sentiment,
             })
         return articles
     except Exception as e:
@@ -213,12 +239,14 @@ def _fetch_facebook(symbol: str) -> List[Dict[str, str]]:
             # Simple relevance check: symbol appears in the post
             if symbol.lower() not in message.lower():
                 continue
+            sentiment = _analyze_sentiment(message)
             articles.append({
                 "title": message[:100],
                 "source": "Facebook",
                 "url": post.get("permalink_url", ""),
                 "published_at": post.get("created_time", ""),
                 "summary": message[:300],
+                "sentiment": sentiment,
             })
         return articles
     except Exception as e:
@@ -242,12 +270,15 @@ def _fetch_rss(symbol: str) -> List[Dict[str, str]]:
                 combined = f"{title} {summary}".lower()
                 if symbol.lower() not in combined:
                     continue
+                text = f"{title} {summary}"
+                sentiment = _analyze_sentiment(text)
                 articles.append({
                     "title": title,
                     "source": feed.feed.get("title", "RSS"),
                     "url": entry.get("link", ""),
                     "published_at": entry.get("published", ""),
                     "summary": summary[:300],
+                    "sentiment": sentiment,
                 })
         except Exception as e:
             logger.warning(f"RSS fetch failed for {feed_url}: {e}")

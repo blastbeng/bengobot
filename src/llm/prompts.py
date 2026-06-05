@@ -121,9 +121,12 @@ def _format_news_for_prompt(articles: list) -> str:
         return "No recent news available."
     lines = []
     for i, art in enumerate(articles, 1):
+        sentiment = art.get("sentiment", {})
+        label = sentiment.get("label", "unknown")
+        compound = sentiment.get("compound", 0.0)
         lines.append(
             f"{i}. [{art.get('source', 'Unknown')}] {art.get('title', '')} "
-            f"({art.get('published_at', '')}) - {art.get('summary', '')[:200]}"
+            f"({art.get('published_at', '')}) - Sentiment: {label} ({compound:.2f}) - {art.get('summary', '')[:200]}"
         )
     return "\n".join(lines)
 
