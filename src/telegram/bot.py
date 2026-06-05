@@ -251,9 +251,9 @@ class TelegramBot:
             articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
             if articles:
                 formatted = _format_news_for_prompt(articles)
-                messages.append(f"*{symbol}*\n{formatted}")
+                messages.append(f"*{base_coin}*\n{formatted}")
             else:
-                messages.append(f"*{symbol}*\nNo recent news.")
+                messages.append(f"*{base_coin}*\nNo recent news.")
 
         full_text = "\n\n".join(messages)
         # Telegram messages have a 4096 character limit; split if needed
