@@ -96,7 +96,8 @@ class TradingEngine:
                     try:
                         articles = await asyncio.to_thread(fetch_news_for_symbol, sym)
                         if articles:
-                            await asyncio.to_thread(store_news_articles, sym, articles)
+                            base_coin = sym.split("/")[0] if "/" in sym else sym
+                            await asyncio.to_thread(store_news_articles, base_coin, articles)
                     except Exception as e:
                         logger.debug(f"Initial news fetch failed for {sym}: {e}")
 
@@ -116,8 +117,9 @@ class TradingEngine:
         try:
             from src.database import get_news_for_symbol
             for sym in symbols_to_refresh:
-                articles = get_news_for_symbol(sym, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
-                logger.info(f"News DB check: {sym} has {len(articles)} articles.")
+                base_coin = sym.split("/")[0] if "/" in sym else sym
+                articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                logger.info(f"News DB check: {base_coin} has {len(articles)} articles.")
         except Exception as e:
             logger.warning(f"News DB status check failed: {e}")
 
@@ -144,7 +146,8 @@ class TradingEngine:
                     try:
                         articles = await asyncio.to_thread(fetch_news_for_symbol, sym)
                         if articles:
-                            await asyncio.to_thread(store_news_articles, sym, articles)
+                            base_coin = sym.split("/")[0] if "/" in sym else sym
+                            await asyncio.to_thread(store_news_articles, base_coin, articles)
                     except Exception as e:
                         logger.debug(f"News refresh failed for {sym}: {e}")
 
@@ -561,9 +564,10 @@ class TradingEngine:
         if settings.NEWS_ENABLED:
             for sym in sample_pairs:
                 try:
-                    agg = await asyncio.to_thread(get_aggregate_sentiment_from_db, sym, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                    base_coin = sym.split("/")[0] if "/" in sym else sym
+                    agg = await asyncio.to_thread(get_aggregate_sentiment_from_db, base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
                     if agg:
-                        news_sentiment[sym] = agg
+                        news_sentiment[base_coin] = agg
                 except Exception as e:
                     logger.debug(f"Could not fetch news sentiment for {sym}: {e}")
 
@@ -1095,7 +1099,8 @@ class TradingEngine:
                 # --- News sentiment risk adjustment for open positions ---
                 if settings.NEWS_ENABLED:
                     try:
-                        agg_sent = get_aggregate_sentiment_from_db(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                        base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+                        agg_sent = get_aggregate_sentiment_from_db(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
                         if agg_sent:
                             compound = agg_sent["avg_compound"]
                             # Force close if sentiment is extremely negative
@@ -1204,7 +1209,8 @@ class TradingEngine:
             # --- News sentiment risk adjustment ---
             if settings.NEWS_ENABLED and settings.NEWS_SENTIMENT_RISK_ADJUSTMENT:
                 try:
-                    agg_sent = get_aggregate_sentiment_from_db(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                    base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+                    agg_sent = get_aggregate_sentiment_from_db(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
                     if agg_sent:
                         compound = agg_sent["avg_compound"]
                         # Skip BUY if sentiment is extremely negative

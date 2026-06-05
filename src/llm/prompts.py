@@ -226,7 +226,8 @@ def build_coin_selection_prompt(
                 "min_trade_cost": limits.get("min_cost"),  # now always a number
             }
             if settings.NEWS_ENABLED:
-                agg = get_aggregate_sentiment_from_db(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                base = symbol.split("/")[0] if "/" in symbol else symbol
+                agg = get_aggregate_sentiment_from_db(base, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
                 if agg:
                     ticker_summary[symbol]["sentiment"] = agg
 
@@ -292,8 +293,9 @@ Return a JSON array of objects, each with "symbol" and "timeframe" fields. The t
         prompt += "\n## News Sentiment\n"
         prompt += "Aggregate sentiment from recent news articles (compound score -1 to +1, higher = more positive):\n"
         for sym in available_pairs:
-            if sym in news_sentiment:
-                ns = news_sentiment[sym]
+            base = sym.split("/")[0] if "/" in sym else sym
+            if base in news_sentiment:
+                ns = news_sentiment[base]
                 prompt += (
                     f"- {sym}: compound={ns['avg_compound']}, "
                     f"positive={ns['positive']}, negative={ns['negative']}, "
@@ -427,7 +429,8 @@ Maximum coins to trade: {max_coins}
     # --- News section ---
     news_section = ""
     if settings.NEWS_ENABLED:
-        articles = get_news_for_symbol(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+        base = symbol.split("/")[0] if "/" in symbol else symbol
+        articles = get_news_for_symbol(base, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
         if articles:
             news_section = "Recent news for this coin:\n" + _format_news_for_prompt(articles)
     if news_section:

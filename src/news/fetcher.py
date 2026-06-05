@@ -142,16 +142,19 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     if not settings.NEWS_ENABLED:
         return []
 
+    # Use base coin (e.g., "BTC") for caching, not the full pair
+    base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+
     start_time = time.time()
-    logger.info(f"Fetching news for {symbol}...")
+    logger.info(f"Fetching news for {symbol} (base coin: {base_coin})...")
 
     redis_client = get_redis_client()
-    cache_key = f"news:{symbol}:{_source_fingerprint()}"
+    cache_key = f"news:{base_coin}:{_source_fingerprint()}"
     cached = redis_client.get(cache_key)
     if cached:
         try:
             articles = json.loads(cached)
-            logger.info(f"News for {symbol} served from cache ({len(articles)} articles)")
+            logger.info(f"News for {base_coin} served from cache ({len(articles)} articles)")
             return articles
         except Exception:
             pass
@@ -210,7 +213,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     try:
         redis_client.setex(cache_key, settings.NEWS_CACHE_TTL_SECONDS, json.dumps(unique))
     except Exception as e:
-        logger.warning(f"Failed to cache news for {symbol}: {e}")
+        logger.warning(f"Failed to cache news for {base_coin}: {e}")
 
     total_time = time.time() - start_time
     logger.info(f"News for {symbol}: {len(unique)} articles from {len(enabled)} sources in {total_time:.2f}s")
@@ -291,8 +294,9 @@ def discover_trending_coins(
         if symbol.lower() in existing_symbols:
             continue
 
-        # Check news sentiment for this coin
-        agg = get_aggregate_sentiment_from_db(pair, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+        # Check news sentiment for this coin (use base coin for DB lookup)
+        base = pair.split("/")[0] if "/" in pair else pair
+        agg = get_aggregate_sentiment_from_db(base, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
         if agg and agg["total_articles"] >= min_articles and agg["avg_compound"] >= min_sentiment:
             candidates.append((pair, agg["avg_compound"]))
 
