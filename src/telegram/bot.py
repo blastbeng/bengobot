@@ -205,7 +205,8 @@ class TelegramBot:
         messages = []
         for entry in coins:
             symbol = entry["symbol"]
-            articles = get_news_for_symbol(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+            base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+            articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
             if articles:
                 formatted = _format_news_for_prompt(articles)
                 messages.append(f"*{symbol}*\n{formatted}")
@@ -230,7 +231,8 @@ class TelegramBot:
         msg = "<b>📰 News Article Counts</b>\n\n"
         for entry in coins:
             symbol = entry["symbol"]
-            articles = get_news_for_symbol(symbol, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+            base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+            articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
             msg += f"<b>{symbol}</b>: {len(articles)} articles\n"
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
