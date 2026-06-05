@@ -7,6 +7,8 @@ from src.config.settings import settings
 from src.trading.engine import TradingEngine
 from src.utils.redis_client import get_redis_client
 from src.database import set_telegram_chat_id, get_telegram_chat_id
+from src.news.fetcher import fetch_news_for_symbol
+from src.llm.prompts import _format_news_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,7 @@ class TelegramBot:
             [
                 [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
                 [KeyboardButton("💰 Profit"), KeyboardButton("📊 Performance")],
+                [KeyboardButton("📰 News")],
                 [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
             ],
             resize_keyboard=True,
@@ -34,6 +37,7 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("trades", self.cmd_trades))
         self.app.add_handler(CommandHandler("profit", self.cmd_profit))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
+        self.app.add_handler(CommandHandler("news", self.cmd_news))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_button))
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -62,6 +66,8 @@ class TelegramBot:
             await self.cmd_pause(update, context)
         elif text == "▶️ Resume":
             await self.cmd_resume(update, context)
+        elif text == "📰 News":
+            await self.cmd_news(update, context)
 
     async def cmd_pause(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await asyncio.to_thread(self.redis.set, "trading:paused", "1")
@@ -188,6 +194,32 @@ class TelegramBot:
 
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
+    async def cmd_news(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show recent news for all currently tracked coins."""
+        coins = self.engine.current_coins
+        if not coins:
+            await update.message.reply_text("No coins currently tracked.")
+            return
+
+        await update.message.reply_text("Fetching latest news...")
+        messages = []
+        for entry in coins:
+            symbol = entry["symbol"]
+            articles = fetch_news_for_symbol(symbol)
+            if articles:
+                formatted = _format_news_for_prompt(articles)
+                messages.append(f"*{symbol}*\n{formatted}")
+            else:
+                messages.append(f"*{symbol}*\nNo recent news.")
+
+        full_text = "\n\n".join(messages)
+        # Telegram messages have a 4096 character limit; split if needed
+        if len(full_text) > 4000:
+            for i in range(0, len(full_text), 4000):
+                await update.message.reply_text(full_text[i:i+4000], parse_mode="Markdown")
+        else:
+            await update.message.reply_text(full_text, parse_mode="Markdown")
+
     async def cmd_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             summary = await asyncio.to_thread(self.engine.get_profit_summary)
@@ -228,6 +260,7 @@ class TelegramBot:
                 [
                     [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
                     [KeyboardButton("💰 Profit"), KeyboardButton("📊 Performance")],
+                    [KeyboardButton("📰 News")],
                     [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
                 ],
                 resize_keyboard=True,
