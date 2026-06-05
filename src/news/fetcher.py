@@ -94,6 +94,12 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     if settings.RSS_FEEDS:
         articles.extend(_fetch_rss(symbol))
 
+    if "youtube" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_youtube(symbol))
+
+    if "cryptopanic" in settings.NEWS_SOURCES:
+        articles.extend(_fetch_cryptopanic(symbol))
+
     # Deduplicate by URL
     seen = set()
     unique = []
@@ -310,6 +316,93 @@ def _fetch_facebook(symbol: str) -> List[Dict[str, str]]:
         return articles
     except Exception as e:
         logger.warning(f"Facebook fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# YouTube Data API v3
+# ---------------------------------------------------------------------------
+
+def _fetch_youtube(symbol: str) -> List[Dict[str, str]]:
+    if not settings.YOUTUBE_API_KEY:
+        return []
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        logger.warning("google-api-python-client not installed. Install with: pip install google-api-python-client")
+        return []
+    try:
+        youtube = build("youtube", "v3", developerKey=settings.YOUTUBE_API_KEY)
+        query = f"{symbol} crypto"
+        request = youtube.search().list(
+            part="snippet",
+            q=query,
+            type="video",
+            maxResults=settings.YOUTUBE_MAX_RESULTS,
+            order="date",
+            relevanceLanguage="en",
+        )
+        response = request.execute()
+        articles = []
+        for item in response.get("items", []):
+            snippet = item["snippet"]
+            title = snippet.get("title", "")
+            description = snippet.get("description", "")
+            text = f"{title} {description}"
+            sentiment = _analyze_sentiment(text)
+            if not _is_relevant(symbol, title, description[:300]):
+                continue
+            articles.append({
+                "title": title,
+                "source": "YouTube",
+                "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                "published_at": snippet.get("publishedAt", ""),
+                "summary": description[:300],
+                "sentiment": sentiment,
+            })
+        return articles
+    except Exception as e:
+        logger.warning(f"YouTube fetch failed for {symbol}: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# CryptoPanic API
+# ---------------------------------------------------------------------------
+
+def _fetch_cryptopanic(symbol: str) -> List[Dict[str, str]]:
+    if not settings.CRYPTOPANIC_API_KEY:
+        return []
+    try:
+        url = "https://cryptopanic.com/api/v1/posts/"
+        params = {
+            "auth_token": settings.CRYPTOPANIC_API_KEY,
+            "currencies": symbol.split("/")[0],  # e.g., BTC from BTC/USDT
+            "kind": "news",
+            "public": "true",
+        }
+        response = httpx.get(url, params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        articles = []
+        for post in data.get("results", [])[:settings.CRYPTOPANIC_MAX_POSTS]:
+            title = post.get("title", "")
+            summary = post.get("body", "") or post.get("description", "")
+            text = f"{title} {summary}"
+            sentiment = _analyze_sentiment(text)
+            if not _is_relevant(symbol, title, summary[:300]):
+                continue
+            articles.append({
+                "title": title,
+                "source": post.get("source", {}).get("title", "CryptoPanic"),
+                "url": post.get("url", ""),
+                "published_at": post.get("published_at", ""),
+                "summary": summary[:300],
+                "sentiment": sentiment,
+            })
+        return articles
+    except Exception as e:
+        logger.warning(f"CryptoPanic fetch failed for {symbol}: {e}")
         return []
 
 

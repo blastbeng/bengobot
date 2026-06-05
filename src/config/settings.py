@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     @field_validator("NEWS_SOURCES")
     @classmethod
     def validate_news_sources(cls, v: list[str]) -> list[str]:
-        allowed = {"newsapi", "twitter", "reddit", "facebook"}
+        allowed = {"newsapi", "twitter", "reddit", "facebook", "youtube", "cryptopanic"}
         for source in v:
             if source not in allowed:
                 raise ValueError(f"Invalid news source: {source}. Allowed: {allowed}")
@@ -84,6 +84,10 @@ class Settings(BaseSettings):
                 raise ValueError("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are required when reddit source is selected")
             if "facebook" in self.NEWS_SOURCES and (not self.FACEBOOK_PAGE_ACCESS_TOKEN or not self.FACEBOOK_PAGE_ID):
                 raise ValueError("FACEBOOK_PAGE_ACCESS_TOKEN and FACEBOOK_PAGE_ID are required when facebook source is selected")
+            if "youtube" in self.NEWS_SOURCES and not self.YOUTUBE_API_KEY:
+                raise ValueError("YOUTUBE_API_KEY is required when youtube source is selected")
+            if "cryptopanic" in self.NEWS_SOURCES and not self.CRYPTOPANIC_API_KEY:
+                raise ValueError("CRYPTOPANIC_API_KEY is required when cryptopanic source is selected")
         return self
 
     # Ollama
@@ -132,6 +136,14 @@ class Settings(BaseSettings):
         "https://cointelegraph.com/rss",
         "https://decrypt.co/feed",
     ]
+
+    # YouTube Data API v3
+    YOUTUBE_API_KEY: Optional[str] = None
+    YOUTUBE_MAX_RESULTS: int = 5
+
+    # CryptoPanic API
+    CRYPTOPANIC_API_KEY: Optional[str] = None
+    CRYPTOPANIC_MAX_POSTS: int = 5
 
     # Telegram
     TELEGRAM_BOT_TOKEN: Optional[str] = None
