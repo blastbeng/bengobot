@@ -4,9 +4,10 @@ import math
 from typing import List, Dict, Any, Optional, Tuple
 from src.config.settings import settings
 try:
-    from src.news.fetcher import fetch_news_for_symbol
+    from src.news.fetcher import fetch_news_for_symbol, get_aggregate_sentiment
 except ImportError:
     fetch_news_for_symbol = None
+    get_aggregate_sentiment = None
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,10 @@ def build_coin_selection_prompt(
                 "volume": t.get("quoteVolume"),
                 "min_trade_cost": limits.get("min_cost"),  # now always a number
             }
+            if settings.NEWS_ENABLED and get_aggregate_sentiment is not None:
+                agg = get_aggregate_sentiment(symbol)
+                if agg:
+                    ticker_summary[symbol]["sentiment"] = agg
 
     # Build OHLCV summary if provided
     ohlcv_summary = {}
