@@ -30,8 +30,6 @@ def _get_enabled_sources() -> List[str]:
         sources.append("youtube")
     if settings.CRYPTOPANIC_API_KEY:
         sources.append("cryptopanic")
-    # CoinGecko is free – always enabled when NEWS_ENABLED is True
-    sources.append("coingecko")
     if settings.CRYPTOCOMPARE_API_KEY:
         sources.append("cryptocompare")
     if settings.LUNARCRUSH_API_KEY:
@@ -46,10 +44,6 @@ def _get_enabled_sources() -> List[str]:
     sources.append("googlenews")
     if settings.STOCKTWITS_API_KEY:
         sources.append("stocktwits")
-    # CoinPaprika is free
-    sources.append("coinpaprika")
-    # CoinCodex is free
-    sources.append("coincodex")
     if settings.RSS_FEEDS:
         sources.append("rss")
     return sources
@@ -133,8 +127,6 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
             articles.extend(_fetch_youtube(symbol))
         elif source == "cryptopanic":
             articles.extend(_fetch_cryptopanic(symbol))
-        elif source == "coingecko":
-            articles.extend(_fetch_coingecko(symbol))
         elif source == "cryptocompare":
             articles.extend(_fetch_cryptocompare(symbol))
         elif source == "lunarcrush":
@@ -149,10 +141,6 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
             articles.extend(_fetch_googlenews(symbol))
         elif source == "stocktwits":
             articles.extend(_fetch_stocktwits(symbol))
-        elif source == "coinpaprika":
-            articles.extend(_fetch_coinpaprika(symbol))
-        elif source == "coincodex":
-            articles.extend(_fetch_coincodex(symbol))
         elif source == "rss":
             articles.extend(_fetch_rss(symbol))
 
@@ -520,38 +508,6 @@ def _fetch_cryptopanic(symbol: str) -> List[Dict[str, str]]:
         return []
 
 
-# ---------------------------------------------------------------------------
-# CoinGecko News API (free, no key required)
-# ---------------------------------------------------------------------------
-
-def _fetch_coingecko(symbol: str) -> List[Dict[str, str]]:
-    """Fetch news from CoinGecko's public news endpoint."""
-    try:
-        url = "https://api.coingecko.com/api/v3/news"
-        response = httpx.get(url, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
-        articles = []
-        for item in data.get("data", [])[:settings.COINGECKO_MAX_ARTICLES]:
-            title = item.get("title", "")
-            description = item.get("description", "")
-            text = f"{title} {description}"
-            sentiment = _analyze_sentiment(text)
-            if not _is_relevant(symbol, title, description[:300]):
-                continue
-            articles.append({
-                "title": title,
-                "source": item.get("source", "CoinGecko"),
-                "url": item.get("url", ""),
-                "published_at": item.get("updated_at", ""),
-                "summary": description[:300],
-                "sentiment": sentiment,
-            })
-        return articles
-    except Exception as e:
-        logger.warning(f"CoinGecko fetch failed for {symbol}: {e}")
-        return []
-
 
 # ---------------------------------------------------------------------------
 # CryptoCompare News API
@@ -835,85 +791,6 @@ def _fetch_stocktwits(symbol: str) -> List[Dict[str, str]]:
         return []
 
 
-# ---------------------------------------------------------------------------
-# CoinPaprika News (free, no key)
-# ---------------------------------------------------------------------------
-
-def _fetch_coinpaprika(symbol: str) -> List[Dict[str, str]]:
-    """Fetch news from CoinPaprika's public news endpoint."""
-    try:
-        url = "https://api.coinpaprika.com/v1/news"
-        response = httpx.get(url, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
-        articles = []
-        for item in data[:settings.COINPAPRIKA_MAX_ARTICLES]:
-            title = item.get("title", "")
-            summary = item.get("content", "") or item.get("description", "")
-            text = f"{title} {summary}"
-            sentiment = _analyze_sentiment(text)
-            if not _is_relevant(symbol, title, summary[:300]):
-                continue
-            articles.append({
-                "title": title,
-                "source": item.get("source", {}).get("name", "CoinPaprika"),
-                "url": item.get("url", ""),
-                "published_at": item.get("published_at", ""),
-                "summary": summary[:300],
-                "sentiment": sentiment,
-            })
-        return articles
-    except Exception as e:
-        logger.warning(f"CoinPaprika fetch failed for {symbol}: {e}")
-        return []
-
-
-# ---------------------------------------------------------------------------
-# CoinCodex News (free, no key)
-# ---------------------------------------------------------------------------
-
-def _fetch_coincodex(symbol: str) -> List[Dict[str, str]]:
-    """Fetch news from CoinCodex by first resolving the coin ID."""
-    try:
-        base = symbol.split("/")[0].lower()
-        # Step 1: search for the coin to get its ID
-        search_url = f"https://coincodex.com/api/coincodex/search?query={base}"
-        search_resp = httpx.get(search_url, timeout=10.0)
-        search_resp.raise_for_status()
-        search_data = search_resp.json()
-        # The response is a list of coins; find the one matching the symbol
-        coin_id = None
-        for coin in search_data:
-            if coin.get("symbol", "").lower() == base:
-                coin_id = coin.get("id")
-                break
-        if not coin_id:
-            return []
-        # Step 2: fetch news for that coin
-        news_url = f"https://coincodex.com/api/coincodex/get_news_by_coin_id/{coin_id}"
-        news_resp = httpx.get(news_url, timeout=10.0)
-        news_resp.raise_for_status()
-        news_data = news_resp.json()
-        articles = []
-        for item in news_data[:settings.COINCODEX_MAX_ARTICLES]:
-            title = item.get("title", "")
-            summary = item.get("content", "") or item.get("description", "")
-            text = f"{title} {summary}"
-            sentiment = _analyze_sentiment(text)
-            if not _is_relevant(symbol, title, summary[:300]):
-                continue
-            articles.append({
-                "title": title,
-                "source": item.get("source", {}).get("name", "CoinCodex"),
-                "url": item.get("url", ""),
-                "published_at": item.get("published_at", ""),
-                "summary": summary[:300],
-                "sentiment": sentiment,
-            })
-        return articles
-    except Exception as e:
-        logger.warning(f"CoinCodex fetch failed for {symbol}: {e}")
-        return []
 
 
 # ---------------------------------------------------------------------------
