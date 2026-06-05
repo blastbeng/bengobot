@@ -85,6 +85,7 @@ class TradingEngine:
 
         while True:
             try:
+                cycle_start = time.time()
                 # Determine symbols to refresh: current coins + top 10 by volume
                 symbols_to_refresh = set(entry["symbol"] for entry in self.current_coins)
                 try:
@@ -107,7 +108,7 @@ class TradingEngine:
                     except Exception as e:
                         logger.debug(f"News refresh failed for {sym}: {e}")
 
-                logger.debug(f"News cache refreshed for {len(symbols_to_refresh)} symbols.")
+                logger.debug(f"News cache refreshed for {len(symbols_to_refresh)} symbols in {time.time() - cycle_start:.2f}s")
             except Exception as e:
                 logger.error(f"Background news refresh error: {e}")
 
