@@ -38,10 +38,9 @@ def get_ollama_response(prompt: str, system_prompt: str = "") -> str:
 def get_openai_response(prompt: str, system_prompt: str = "") -> str:
     """Send a prompt to the configured OpenAI-compatible API and return the response text."""
     url = f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-    }
+    headers = {"Content-Type": "application/json"}
+    if settings.OPENAI_API_KEY:
+        headers["Authorization"] = f"Bearer {settings.OPENAI_API_KEY}"
 
     messages = []
     if system_prompt:

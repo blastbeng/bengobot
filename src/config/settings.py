@@ -66,11 +66,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "EXCHANGE_API_KEY and EXCHANGE_SECRET are required when TRADING_MODE='live'"
                 )
-        if self.LLM_PROVIDER == "openai":
-            if not self.OPENAI_API_KEY:
-                raise ValueError(
-                    "OPENAI_API_KEY is required when LLM_PROVIDER='openai'"
-                )
         return self
 
     # Ollama
