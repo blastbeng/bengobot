@@ -15,6 +15,46 @@ logger = logging.getLogger(__name__)
 _sentiment_analyzer = SentimentIntensityAnalyzer()
 
 
+def _get_enabled_sources() -> List[str]:
+    """Return a list of source names that are enabled based on configured credentials."""
+    sources = []
+    if settings.NEWS_API_KEY:
+        sources.append("newsapi")
+    if settings.TWITTER_BEARER_TOKEN:
+        sources.append("twitter")
+    if settings.REDDIT_CLIENT_ID and settings.REDDIT_CLIENT_SECRET:
+        sources.append("reddit")
+    if settings.FACEBOOK_PAGE_ACCESS_TOKEN and settings.FACEBOOK_PAGE_ID:
+        sources.append("facebook")
+    if settings.YOUTUBE_API_KEY:
+        sources.append("youtube")
+    if settings.CRYPTOPANIC_API_KEY:
+        sources.append("cryptopanic")
+    # CoinGecko is free – always enabled when NEWS_ENABLED is True
+    sources.append("coingecko")
+    if settings.CRYPTOCOMPARE_API_KEY:
+        sources.append("cryptocompare")
+    if settings.LUNARCRUSH_API_KEY:
+        sources.append("lunarcrush")
+    if settings.SANTIMENT_API_KEY:
+        sources.append("santiment")
+    if settings.MESSARI_API_KEY:
+        sources.append("messari")
+    if settings.COINMARKETCAP_API_KEY:
+        sources.append("coinmarketcap")
+    # Google News is free
+    sources.append("googlenews")
+    if settings.STOCKTWITS_API_KEY:
+        sources.append("stocktwits")
+    # CoinPaprika is free
+    sources.append("coinpaprika")
+    # CoinCodex is free
+    sources.append("coincodex")
+    if settings.RSS_FEEDS:
+        sources.append("rss")
+    return sources
+
+
 def _analyze_sentiment(text: str) -> Dict[str, Any]:
     """Return sentiment label and compound score for a text."""
     scores = _sentiment_analyzer.polarity_scores(text)
@@ -79,56 +119,42 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
 
     articles: List[Dict[str, str]] = []
 
-    if "newsapi" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_newsapi(symbol))
-
-    if "twitter" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_twitter(symbol))
-
-    if "reddit" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_reddit(symbol))
-
-    if "facebook" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_facebook(symbol))
-
-    if settings.RSS_FEEDS:
-        articles.extend(_fetch_rss(symbol))
-
-    if "youtube" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_youtube(symbol))
-
-    if "cryptopanic" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_cryptopanic(symbol))
-
-    if "coingecko" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_coingecko(symbol))
-
-    if "cryptocompare" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_cryptocompare(symbol))
-
-    if "lunarcrush" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_lunarcrush(symbol))
-
-    if "santiment" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_santiment(symbol))
-
-    if "messari" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_messari(symbol))
-
-    if "coinmarketcap" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_coinmarketcap(symbol))
-
-    if "googlenews" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_googlenews(symbol))
-
-    if "stocktwits" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_stocktwits(symbol))
-
-    if "coinpaprika" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_coinpaprika(symbol))
-
-    if "coincodex" in settings.NEWS_SOURCES:
-        articles.extend(_fetch_coincodex(symbol))
+    enabled = _get_enabled_sources()
+    for source in enabled:
+        if source == "newsapi":
+            articles.extend(_fetch_newsapi(symbol))
+        elif source == "twitter":
+            articles.extend(_fetch_twitter(symbol))
+        elif source == "reddit":
+            articles.extend(_fetch_reddit(symbol))
+        elif source == "facebook":
+            articles.extend(_fetch_facebook(symbol))
+        elif source == "youtube":
+            articles.extend(_fetch_youtube(symbol))
+        elif source == "cryptopanic":
+            articles.extend(_fetch_cryptopanic(symbol))
+        elif source == "coingecko":
+            articles.extend(_fetch_coingecko(symbol))
+        elif source == "cryptocompare":
+            articles.extend(_fetch_cryptocompare(symbol))
+        elif source == "lunarcrush":
+            articles.extend(_fetch_lunarcrush(symbol))
+        elif source == "santiment":
+            articles.extend(_fetch_santiment(symbol))
+        elif source == "messari":
+            articles.extend(_fetch_messari(symbol))
+        elif source == "coinmarketcap":
+            articles.extend(_fetch_coinmarketcap(symbol))
+        elif source == "googlenews":
+            articles.extend(_fetch_googlenews(symbol))
+        elif source == "stocktwits":
+            articles.extend(_fetch_stocktwits(symbol))
+        elif source == "coinpaprika":
+            articles.extend(_fetch_coinpaprika(symbol))
+        elif source == "coincodex":
+            articles.extend(_fetch_coincodex(symbol))
+        elif source == "rss":
+            articles.extend(_fetch_rss(symbol))
 
     # Deduplicate by URL
     seen = set()
@@ -237,7 +263,7 @@ def discover_trending_coins(
 
 def _source_fingerprint() -> str:
     """Create a short fingerprint of the current source configuration for cache key."""
-    raw = f"{settings.NEWS_SOURCES}:{settings.NEWS_MAX_ARTICLES_PER_SYMBOL}"
+    raw = f"{_get_enabled_sources()}:{settings.NEWS_MAX_ARTICLES_PER_SYMBOL}"
     return hashlib.md5(raw.encode()).hexdigest()[:8]
 
 

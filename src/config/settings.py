@@ -75,31 +75,6 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "EXCHANGE_API_KEY and EXCHANGE_SECRET are required when TRADING_MODE='live'"
                 )
-        if self.NEWS_ENABLED:
-            if "newsapi" in self.NEWS_SOURCES and not self.NEWS_API_KEY:
-                raise ValueError("NEWS_API_KEY is required when NEWS_ENABLED and newsapi source is selected")
-            if "twitter" in self.NEWS_SOURCES and not self.TWITTER_BEARER_TOKEN:
-                raise ValueError("TWITTER_BEARER_TOKEN is required when twitter source is selected")
-            if "reddit" in self.NEWS_SOURCES and (not self.REDDIT_CLIENT_ID or not self.REDDIT_CLIENT_SECRET):
-                raise ValueError("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are required when reddit source is selected")
-            if "facebook" in self.NEWS_SOURCES and (not self.FACEBOOK_PAGE_ACCESS_TOKEN or not self.FACEBOOK_PAGE_ID):
-                raise ValueError("FACEBOOK_PAGE_ACCESS_TOKEN and FACEBOOK_PAGE_ID are required when facebook source is selected")
-            if "youtube" in self.NEWS_SOURCES and not self.YOUTUBE_API_KEY:
-                raise ValueError("YOUTUBE_API_KEY is required when youtube source is selected")
-            if "cryptopanic" in self.NEWS_SOURCES and not self.CRYPTOPANIC_API_KEY:
-                raise ValueError("CRYPTOPANIC_API_KEY is required when cryptopanic source is selected")
-            if "cryptocompare" in self.NEWS_SOURCES and not self.CRYPTOCOMPARE_API_KEY:
-                raise ValueError("CRYPTOCOMPARE_API_KEY is required when cryptocompare source is selected")
-            if "lunarcrush" in self.NEWS_SOURCES and not self.LUNARCRUSH_API_KEY:
-                raise ValueError("LUNARCRUSH_API_KEY is required when lunarcrush source is selected")
-            if "santiment" in self.NEWS_SOURCES and not self.SANTIMENT_API_KEY:
-                raise ValueError("SANTIMENT_API_KEY is required when santiment source is selected")
-            if "messari" in self.NEWS_SOURCES and not self.MESSARI_API_KEY:
-                raise ValueError("MESSARI_API_KEY is required when messari source is selected")
-            if "coinmarketcap" in self.NEWS_SOURCES and not self.COINMARKETCAP_API_KEY:
-                raise ValueError("COINMARKETCAP_API_KEY is required when coinmarketcap source is selected")
-            if "stocktwits" in self.NEWS_SOURCES and not self.STOCKTWITS_API_KEY:
-                raise ValueError("STOCKTWITS_API_KEY is required when stocktwits source is selected")
         return self
 
     # Ollama
