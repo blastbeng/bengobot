@@ -307,6 +307,24 @@ Your task is to analyze market data and historical performance to provide tradin
 
 You will receive historical performance data (equity curve, per-coin win rates, per-strategy success rates). Use this data to learn which coins and strategies have been profitable in the short term, and to adapt your decisions accordingly. If the overall profit is declining, become more selective and risk-averse. If a coin has a poor short-term track record, avoid it or reduce position size. Prefer strategies with high win rates and average P&L over recent trades.
 
+When selecting coins, consider the provided technical indicators (RSI, MACD, Bollinger Bands, EMAs, Stochastic, ADX, OBV, MFI, CCI, Williams %R) to identify coins with strong momentum, oversold/overbought conditions, and trend strength. Prefer coins with bullish indicator alignments.
+
+You may optionally include an "indicator_config" object in your strategy JSON to customize the indicator parameters for future cycles. If omitted, default parameters will be used. The object can contain any of the following keys (all optional):
+- rsi_period (int, default 14)
+- macd_fast (int, default 12)
+- macd_slow (int, default 26)
+- macd_signal (int, default 9)
+- bb_period (int, default 20)
+- bb_std (float, default 2.0)
+- ema_fast (int, default 9)
+- ema_slow (int, default 21)
+- stoch_k_period (int, default 14)
+- stoch_d_period (int, default 3)
+- adx_period (int, default 14)
+- mfi_period (int, default 14)
+- cci_period (int, default 20)
+- willr_period (int, default 14)
+
 When asked to select coins, return a JSON array of trading pair symbols (e.g., ["BTC/USDT", "ETH/USDT"]). Choose coins that are likely to deliver short-term profit based on recent price action, volume, and volatility. Prefer coins with high liquidity and clear short-term trends.
 
 When asked to generate a strategy for a specific coin, return a JSON object with the following structure:
@@ -362,6 +380,7 @@ def build_coin_selection_prompt(
     ohlcv_data: Optional[Dict[str, Dict[str, List]]] = None,
     market_trend: Optional[Dict[str, Any]] = None,
     news_sentiment: Optional[Dict[str, Dict[str, Any]]] = None,
+    coin_indicators: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -438,6 +457,32 @@ Each symbol can only appear once in your selection. Choose the single best timef
 Return a JSON array of objects, each with "symbol" and "timeframe" fields. The timeframe must be one of the available timeframes (e.g., "5m", "15m", "1h", "4h") that you believe is most suitable for trading that coin based on the multi-timeframe OHLCV data. Example: [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, ...]"""
     if ohlcv_summary:
         prompt += f"\nMulti-timeframe OHLCV summary (price change %, high, low, volume):\n{json.dumps(ohlcv_summary, indent=2)}\n"
+    if coin_indicators:
+        prompt += "\nTechnical indicators for candidate coins:\n"
+        for sym, ind in coin_indicators.items():
+            lines = [f"{sym}:"]
+            if ind.get('rsi') is not None:
+                lines.append(f"  RSI(14)={ind['rsi']:.2f}")
+            if ind.get('macd') is not None:
+                lines.append(f"  MACD={ind['macd']:.4f} Signal={ind['macd_signal']:.4f} Hist={ind['macd_hist']:.4f}")
+            if ind.get('bb_upper') is not None:
+                lines.append(f"  BB Upper={ind['bb_upper']:.4f} Middle={ind['bb_middle']:.4f} Lower={ind['bb_lower']:.4f}")
+            if ind.get('ema_9') is not None:
+                lines.append(f"  EMA9={ind['ema_9']:.4f} EMA21={ind['ema_21']:.4f}")
+            if ind.get('stochastic_k') is not None:
+                d_str = f"{ind['stochastic_d']:.2f}" if ind['stochastic_d'] is not None else "N/A"
+                lines.append(f"  Stoch %K={ind['stochastic_k']:.2f} %D={d_str}")
+            if ind.get('adx') is not None:
+                lines.append(f"  ADX(14)={ind['adx']:.2f} +DI={ind['plus_di']:.2f} -DI={ind['minus_di']:.2f}")
+            if ind.get('obv') is not None:
+                lines.append(f"  OBV={ind['obv']:.2f}")
+            if ind.get('mfi') is not None:
+                lines.append(f"  MFI(14)={ind['mfi']:.2f}")
+            if ind.get('cci') is not None:
+                lines.append(f"  CCI(20)={ind['cci']:.2f}")
+            if ind.get('williams_r') is not None:
+                lines.append(f"  Williams %R(14)={ind['williams_r']:.2f}")
+            prompt += "\n".join(lines) + "\n"
     if market_trend:
         prompt += f"\nOverall market trend ({market_trend['symbol']}): 24h change {market_trend.get('change_24h')}%, last price {market_trend.get('last')}\n"
     if news_sentiment:

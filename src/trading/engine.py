@@ -620,6 +620,45 @@ class TradingEngine:
             results = await asyncio.gather(*tasks)
             ohlcv_data = dict(results)
 
+        # Compute indicators for each coin with OHLCV data
+        coin_indicators = {}
+        for sym, tf_data in ohlcv_data.items():
+            for tf in settings.OHLCV_TIMEFRAMES:
+                if tf in tf_data and tf_data[tf]:
+                    candles = tf_data[tf]
+                    if len(candles) >= 26:
+                        closes = [c[4] for c in candles]
+                        highs = [c[2] for c in candles]
+                        lows = [c[3] for c in candles]
+                        volumes = [c[5] for c in candles]
+                        ind = {}
+                        ind['rsi'] = compute_rsi(closes)
+                        macd_val, macd_sig, macd_hist = compute_macd(closes)
+                        ind['macd'] = macd_val
+                        ind['macd_signal'] = macd_sig
+                        ind['macd_hist'] = macd_hist
+                        bb_upper, bb_middle, bb_lower = compute_bollinger_bands(closes)
+                        ind['bb_upper'] = bb_upper
+                        ind['bb_middle'] = bb_middle
+                        ind['bb_lower'] = bb_lower
+                        ema_9_list = compute_ema(closes, 9)
+                        ema_21_list = compute_ema(closes, 21)
+                        ind['ema_9'] = ema_9_list[-1] if ema_9_list else None
+                        ind['ema_21'] = ema_21_list[-1] if ema_21_list else None
+                        stochastic_k, stochastic_d = compute_stochastic(highs, lows, closes)
+                        ind['stochastic_k'] = stochastic_k
+                        ind['stochastic_d'] = stochastic_d
+                        adx_val, plus_di, minus_di = compute_adx(highs, lows, closes)
+                        ind['adx'] = adx_val
+                        ind['plus_di'] = plus_di
+                        ind['minus_di'] = minus_di
+                        ind['obv'] = compute_obv(closes, volumes)
+                        ind['mfi'] = compute_mfi(highs, lows, closes, volumes)
+                        ind['cci'] = compute_cci(highs, lows, closes)
+                        ind['williams_r'] = compute_williams_r(highs, lows, closes)
+                        coin_indicators[sym] = ind
+                    break
+
         # Build market_limits with a concrete min_cost for each symbol
         market_limits = {}
         for symbol in sample_pairs:
@@ -675,6 +714,7 @@ class TradingEngine:
             ohlcv_data=ohlcv_data,
             market_trend=market_trend,
             news_sentiment=news_sentiment,
+            coin_indicators=coin_indicators,
         )
         response = await asyncio.to_thread(get_cached_llm_response, prompt, SYSTEM_PROMPT, 300)
         logger.info(f"LLM coin selection raw response: {response}")
@@ -779,6 +819,23 @@ class TradingEngine:
             perf = self._compute_performance_metrics()
 
             # --- Compute additional metrics for the LLM ---
+            # Get indicator config for this coin (LLM-defined)
+            ind_cfg = self.positions.get(symbol, {}).get('indicator_config') if symbol in self.positions else None
+            rsi_period = ind_cfg.get('rsi_period', 14) if ind_cfg else 14
+            macd_fast = ind_cfg.get('macd_fast', 12) if ind_cfg else 12
+            macd_slow = ind_cfg.get('macd_slow', 26) if ind_cfg else 26
+            macd_signal_period = ind_cfg.get('macd_signal', 9) if ind_cfg else 9
+            bb_period = ind_cfg.get('bb_period', 20) if ind_cfg else 20
+            bb_std = ind_cfg.get('bb_std', 2.0) if ind_cfg else 2.0
+            ema_fast = ind_cfg.get('ema_fast', 9) if ind_cfg else 9
+            ema_slow = ind_cfg.get('ema_slow', 21) if ind_cfg else 21
+            stoch_k_period = ind_cfg.get('stoch_k_period', 14) if ind_cfg else 14
+            stoch_d_period = ind_cfg.get('stoch_d_period', 3) if ind_cfg else 3
+            adx_period = ind_cfg.get('adx_period', 14) if ind_cfg else 14
+            mfi_period = ind_cfg.get('mfi_period', 14) if ind_cfg else 14
+            cci_period = ind_cfg.get('cci_period', 20) if ind_cfg else 20
+            willr_period = ind_cfg.get('willr_period', 14) if ind_cfg else 14
+
             atr = None
             rsi = None
             macd = None
@@ -807,23 +864,21 @@ class TradingEngine:
                         highs = [c[2] for c in candles]
                         lows = [c[3] for c in candles]
                         volumes = [c[5] for c in candles]
-                        rsi = compute_rsi(closes)
-                        macd, macd_signal, macd_hist = compute_macd(closes)
-                        bb_upper, bb_middle, bb_lower = compute_bollinger_bands(closes)
-                        # Compute EMAs via LLM
-                        ema_9_list = compute_ema(closes, 9)
-                        ema_21_list = compute_ema(closes, 21)
+                        rsi = compute_rsi(closes, period=rsi_period)
+                        macd, macd_signal, macd_hist = compute_macd(closes, fast=macd_fast, slow=macd_slow, signal=macd_signal_period)
+                        bb_upper, bb_middle, bb_lower = compute_bollinger_bands(closes, period=bb_period, std_dev=bb_std)
+                        ema_9_list = compute_ema(closes, ema_fast)
+                        ema_21_list = compute_ema(closes, ema_slow)
                         if ema_9_list:
                             ema_9 = ema_9_list[-1]
                         if ema_21_list:
                             ema_21 = ema_21_list[-1]
-                        # New indicators
-                        stochastic_k, stochastic_d = compute_stochastic(highs, lows, closes)
-                        adx, plus_di, minus_di = compute_adx(highs, lows, closes)
+                        stochastic_k, stochastic_d = compute_stochastic(highs, lows, closes, period=stoch_k_period, smooth_k=stoch_d_period)
+                        adx, plus_di, minus_di = compute_adx(highs, lows, closes, period=adx_period)
                         obv = compute_obv(closes, volumes)
-                        mfi = compute_mfi(highs, lows, closes, volumes)
-                        cci = compute_cci(highs, lows, closes)
-                        williams_r = compute_williams_r(highs, lows, closes)
+                        mfi = compute_mfi(highs, lows, closes, volumes, period=mfi_period)
+                        cci = compute_cci(highs, lows, closes, period=cci_period)
+                        williams_r = compute_williams_r(highs, lows, closes, period=willr_period)
 
             # Extract raw candles for the assigned timeframe
             raw_candles = None
@@ -1425,6 +1480,7 @@ class TradingEngine:
                     self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
                     self.positions[symbol]["trailing_stop_activation_pct"] = params.get("trailing_stop_activation_pct")
                     self.positions[symbol]["timeframe"] = timeframe
+                    self.positions[symbol]["indicator_config"] = signal.indicator_config
                 else:
                     entry_price = cost_basis / net_base if net_base > 0 else order["price"]
                     self.positions[symbol] = {
@@ -1442,6 +1498,7 @@ class TradingEngine:
                         "max_hold_time_seconds": params.get("max_hold_time_seconds"),
                         "trailing_stop_activation_pct": params.get("trailing_stop_activation_pct"),
                         "timeframe": timeframe,
+                        "indicator_config": signal.indicator_config,
                     }
                 order["strategy_type"] = signal.strategy_type
                 order["timeframe"] = timeframe

@@ -25,6 +25,10 @@ def parse_llm_response(response_text: str) -> Signal:
         if risk_level not in ("low", "medium", "high"):
             risk_level = "medium"
 
+        indicator_config = data.get("indicator_config")
+        if not isinstance(indicator_config, dict):
+            indicator_config = None
+
         return Signal(
             action=action,
             confidence=confidence,
@@ -32,6 +36,7 @@ def parse_llm_response(response_text: str) -> Signal:
             strategy_type=strategy_type,
             strategy_params=strategy_params,
             risk_level=risk_level,
+            indicator_config=indicator_config,
         )
     except (json.JSONDecodeError, ValueError, TypeError):
         return Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response")
