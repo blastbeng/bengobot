@@ -324,19 +324,8 @@ class TelegramBot:
         if not chat_id:
             logger.warning("No chat_id stored – cannot send notification. Use /start first.")
             return
-        # Ensure keyboard is never None (race condition safety)
-        if self.keyboard is None:
-            self.keyboard = ReplyKeyboardMarkup(
-                [
-                    [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
-                    [KeyboardButton("💰 Profit"), KeyboardButton("📊 Performance")],
-                    [KeyboardButton("📰 News"), KeyboardButton("⚠️ Risk")],
-                    [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
-                ],
-                resize_keyboard=True,
-            )
         try:
-            await self.app.bot.send_message(chat_id=int(chat_id), text=message, reply_markup=self.keyboard)
+            await self.app.bot.send_message(chat_id=int(chat_id), text=message)
             logger.info("Notification sent successfully.")
         except Exception as e:
             logger.error(f"Failed to send Telegram notification: {e}", exc_info=True)
