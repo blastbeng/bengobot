@@ -153,9 +153,20 @@ class TelegramBot:
 
             ts = datetime.fromtimestamp(t['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
+            # Fetch current price
+            current_price = None
+            try:
+                ticker = await asyncio.to_thread(self.engine.exchange.fetch_ticker, sym)
+                current_price = ticker.get('last') if ticker else None
+            except Exception as e:
+                logger.warning(f"Could not fetch current price for {sym}: {e}")
+
             line = f"🟢 <b>BUY</b> <code>{sym}</code>\n"
             line += f"   🕒 {ts}\n"
-            line += f"   Amount: {amt:.6f}  Entry: {price:.4f}\n"
+            line += f"   Amount: {amt:.6f}  Entry: {price:.4f}"
+            if current_price is not None:
+                line += f"  Current: {current_price:.4f}"
+            line += "\n"
             line += f"   Fee: {fee_str}\n"
 
             pnl = t['unrealized_pnl']
