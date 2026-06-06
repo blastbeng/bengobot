@@ -1051,6 +1051,14 @@ class TradingEngine:
                     ind_parts.append(f"ADX={adx:.1f}")
                 if atr is not None:
                     ind_parts.append(f"ATR={atr:.4f}")
+                if obv is not None:
+                    ind_parts.append(f"OBV={obv:.2f}")
+                if mfi is not None:
+                    ind_parts.append(f"MFI={mfi:.2f}")
+                if cci is not None:
+                    ind_parts.append(f"CCI={cci:.2f}")
+                if williams_r is not None:
+                    ind_parts.append(f"WR={williams_r:.2f}")
                 indicator_str = " | ".join(ind_parts) if ind_parts else ""
                 msg = f"{emoji} {symbol}: {validated.action} (confidence: {validated.confidence:.2f}) – {validated.reasoning}"
                 if indicator_str:
