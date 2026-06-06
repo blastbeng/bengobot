@@ -88,8 +88,10 @@ def compute_stochastic(
     fast_k = ((closes[-1] - recent_low) / (recent_high - recent_low)) * 100
     k_values = []
     for i in range(-period, 0):
-        h = max(highs[i:i+period])
-        l = min(lows[i:i+period])
+        start = i - period + 1
+        end = i + 1 if i + 1 != 0 else None
+        h = max(highs[start:end])
+        l = min(lows[start:end])
         if h == l:
             k_values.append(50.0)
         else:
@@ -549,7 +551,8 @@ Maximum coins to trade: {max_coins}
     if ema_21 is not None:
         prompt += f"EMA (21): {ema_21}\n"
     if stochastic_k is not None:
-        prompt += f"Stochastic Oscillator: %K={stochastic_k:.2f}, %D={stochastic_d:.2f}\n"
+        d_str = f"{stochastic_d:.2f}" if stochastic_d is not None else "N/A"
+        prompt += f"Stochastic Oscillator: %K={stochastic_k:.2f}, %D={d_str}\n"
     if adx is not None:
         prompt += f"ADX(14): {adx:.2f}, +DI={plus_di:.2f}, -DI={minus_di:.2f}\n"
     if obv is not None:
