@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_atr(candles: List[List], period: int = 14) -> float:
-    """Compute Average True Range from OHLCV candles."""
+    """Compute Average True Range from OHLCV candles using Wilder's smoothing."""
     if len(candles) < period + 1:
         return 0.0
     tr_values = []
@@ -21,8 +21,11 @@ def compute_atr(candles: List[List], period: int = 14) -> float:
         tr_values.append(tr)
     if len(tr_values) < period:
         return 0.0
-    recent_tr = tr_values[-period:]
-    return sum(recent_tr) / period
+    # Wilder's smoothing: seed with SMA of first `period` values
+    atr = sum(tr_values[:period]) / period
+    for i in range(period, len(tr_values)):
+        atr = (atr * (period - 1) + tr_values[i]) / period
+    return atr
 
 
 def compute_rsi(closes: List[float], period: int = 14) -> Optional[float]:
