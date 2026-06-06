@@ -1499,6 +1499,13 @@ class TradingEngine:
                 fee = order.get('fee', {})
                 fee_cost = float(fee.get('cost', 0.0) or 0.0)
                 fee_currency = fee.get('currency', '')
+
+                # Fallback: compute fee from fee_rate if missing or zero
+                if fee_cost == 0.0:
+                    fee_cost = order['cost'] * fee_rate
+                    fee_currency = quote  # assume fee is charged in quote currency
+                    order['fee'] = {'cost': fee_cost, 'currency': fee_currency}
+
                 cost_basis = order['cost'] + (fee_cost if fee_currency == quote else 0.0)
                 net_base = order['amount'] - (fee_cost if fee_currency == base else 0.0)
 
@@ -1560,6 +1567,8 @@ class TradingEngine:
                     await self.notifier.send_notification(f"❌ Buy order failed for {symbol}: {e}")
 
         elif signal.action == "SELL":
+            # Fetch fee rate for this symbol
+            fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
             # Determine the amount of base currency to sell
             pos = self.positions.get(symbol)
             if pos:
@@ -1600,6 +1609,13 @@ class TradingEngine:
                 fee = order.get('fee', {})
                 fee_cost = float(fee.get('cost', 0.0) or 0.0)
                 fee_currency = fee.get('currency', '')
+
+                # Fallback: compute fee from fee_rate if missing or zero
+                if fee_cost == 0.0:
+                    fee_cost = order['cost'] * fee_rate
+                    fee_currency = quote  # assume fee is charged in quote currency
+                    order['fee'] = {'cost': fee_cost, 'currency': fee_currency}
+
                 net_quote = order['cost'] - (fee_cost if fee_currency == quote else 0.0)
                 if pos:
                     cost_basis = pos.get("cost_basis", pos["amount"] * pos["price"])
