@@ -279,16 +279,6 @@
                 </div>
             </div>
 
-            <div class="card card-full">
-                <h2>Open Positions</h2>
-                <div class="table-wrapper">
-                    <table id="trades-table">
-                        <thead><tr><th>Time</th><th>Side</th><th>Symbol</th><th>Amount</th><th>Price</th><th>Fee</th><th>P&L</th><th>Profit %</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-
             <div class="card">
                 <h2>Profit Summary</h2>
                 <div id="profit">-</div>
@@ -297,11 +287,6 @@
             <div class="card">
                 <h2>Risk Metrics</h2>
                 <div id="risk">-</div>
-            </div>
-
-            <div class="card card-full">
-                <h2>News</h2>
-                <div id="news">-</div>
             </div>
 
             <div class="card card-full">
@@ -333,6 +318,11 @@
                         <tfoot></tfoot>
                     </table>
                 </div>
+            </div>
+
+            <div class="card card-full">
+                <h2>News</h2>
+                <div id="news">-</div>
             </div>
         </div>
     </div>
@@ -442,40 +432,6 @@
                     .filter(([_, v]) => v > 0)
                     .map(([k, v]) => `${k}: ${v.toFixed(6)}`)
                     .join('<br>') || 'None';
-            }
-
-            // Trades
-            const tradesBody = document.querySelector('#trades-table tbody');
-            tradesBody.innerHTML = '';
-            if (data.trades) {
-                data.trades.forEach(t => {
-                    const row = tradesBody.insertRow();
-                    // Formatted timestamp: date + time
-                    const ts = new Date(t.timestamp);
-                    const formattedTs = ts.toLocaleString();
-                    row.insertCell().textContent = formattedTs;
-                    row.insertCell().textContent = t.side?.toUpperCase();
-                    row.insertCell().textContent = t.symbol;
-                    row.insertCell().textContent = t.amount?.toFixed(6);
-                    row.insertCell().textContent = t.price?.toFixed(4);
-                    // Fee
-                    const fee = t.fee;
-                    const feeStr = fee && fee.cost ? `${fee.cost?.toFixed(6)} ${fee.currency}` : '-';
-                    row.insertCell().textContent = feeStr;
-                    // Unrealized P&L
-                    const pnlCell = row.insertCell();
-                    const pnlPctCell = row.insertCell();
-                    if (t.unrealized_pnl !== undefined) {
-                        pnlCell.textContent = t.unrealized_pnl.toFixed(4);
-                        pnlCell.className = t.unrealized_pnl >= 0 ? 'green' : 'red';
-                        const pnlPct = t.unrealized_pnl_pct || 0;
-                        pnlPctCell.textContent = pnlPct.toFixed(2) + '%';
-                        pnlPctCell.className = pnlPct >= 0 ? 'green' : 'red';
-                    } else {
-                        pnlCell.textContent = '-';
-                        pnlPctCell.textContent = '-';
-                    }
-                });
             }
 
             // Profit
