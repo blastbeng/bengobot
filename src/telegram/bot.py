@@ -61,7 +61,7 @@ class TelegramBot:
             await self.cmd_trades(update, context)
         elif text == "💰 Profit":
             await self.cmd_profit(update, context)
-        elif text == "📊 Performance":
+        elif text == "🚀 Performance":
             await self.cmd_performance(update, context)
         elif text == "⏸️ Pause":
             await self.cmd_pause(update, context)
