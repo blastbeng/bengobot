@@ -335,13 +335,13 @@ class TelegramBot:
             pnl_sign = "+" if pnl >= 0 else ""
 
             msg = "<b>💰 Profit Summary</b>\n\n"
-            msg += f"💵 Initial Balance:  {summary['initial_balance']:,.2f}\n"
-            msg += f"🏦 Current Balance:  {summary['current_balance']:,.2f}\n"
-            msg += f"📊 Open Positions:   {summary['open_value']:,.2f}\n"
+            msg += f"💵 Initial Balance:  {summary['initial_balance']:,.6f}\n"
+            msg += f"🏦 Current Balance:  {summary['current_balance']:,.6f}\n"
+            msg += f"📊 Open Positions:   {summary['open_value']:,.6f}\n"
             total_wallet = summary['current_balance'] + summary['open_value']
-            msg += f"💼 Total Wallet:     {total_wallet:,.2f}\n"
+            msg += f"💼 Total Wallet:     {total_wallet:,.6f}\n"
             msg += f"🧾 Fees Paid:        {summary['total_fees']:,.6f}\n"
-            msg += f"{pnl_emoji} Total P&L:         {pnl_sign}{pnl:,.2f}  ({pnl_sign}{pnl_pct:.2f}%)\n"
+            msg += f"{pnl_emoji} Total P&L:         {pnl_sign}{pnl:,.6f}  ({pnl_sign}{pnl_pct:.2f}%)\n"
             wins = summary.get('wins', 0)
             losses = summary.get('losses', 0)
             win_rate = summary.get('win_rate', 0.0)
