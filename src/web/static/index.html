@@ -399,11 +399,11 @@
                     const unrealPnlCell = row.insertCell();
                     curPriceCell.textContent = '...';
                     unrealPnlCell.textContent = '...';
-                    fetch(`/api/ohlcv/${encodeURIComponent(sym)}?timeframe=1h&limit=1`)
+                    fetch(`/api/ticker/${encodeURIComponent(sym)}`)
                         .then(res => res.json())
-                        .then(json => {
-                            if (json.data && json.data.length > 0) {
-                                const curPrice = json.data[json.data.length-1].close;
+                        .then(ticker => {
+                            if (ticker && ticker.last !== undefined && ticker.last !== null) {
+                                const curPrice = ticker.last;
                                 curPriceCell.textContent = curPrice.toFixed(4);
                                 const entry = pos.price;
                                 const amount = pos.amount;

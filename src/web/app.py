@@ -154,6 +154,22 @@ async def ohlcv(symbol: str, timeframe: str = "1h", limit: int = 24):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/ticker/{symbol}")
+async def ticker(symbol: str):
+    engine = get_engine()
+    exchange = engine.exchange
+    try:
+        ticker_data = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+        return {
+            "symbol": symbol,
+            "last": ticker_data.get("last"),
+            "bid": ticker_data.get("bid"),
+            "ask": ticker_data.get("ask"),
+            "change_24h": ticker_data.get("percentage"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
