@@ -7,6 +7,13 @@ logger = logging.getLogger(__name__)
 
 FEE_CACHE_TTL = 86400  # 1 day in seconds
 
+# Known default taker fees for exchanges that require API keys for fee lookup.
+# These are used when credentials are missing, avoiding noisy warnings.
+EXCHANGE_DEFAULT_FEES = {
+    "kucoin": 0.001,   # 0.1%
+    # Add other exchanges here as needed
+}
+
 
 def get_fee_rate(
     exchange: ccxt.Exchange,
@@ -31,13 +38,18 @@ def get_fee_rate(
             logger.warning(f"Redis get failed for fee rate: {e}")
 
     # Fetch from exchange
-    try:
-        fees = exchange.fetch_trading_fee(symbol)
-        taker = fees.get('taker', fees.get('maker', default))
-        rate = float(taker)
-    except Exception as e:
-        logger.warning(f"Could not fetch trading fee for {symbol}: {e}. Using default {default}")
-        rate = default
+    exchange_id = exchange.id.lower() if hasattr(exchange, 'id') else ''
+    if exchange_id in EXCHANGE_DEFAULT_FEES and not getattr(exchange, 'apiKey', None):
+        # Exchange requires API key but none is set – use known default silently
+        rate = EXCHANGE_DEFAULT_FEES[exchange_id]
+    else:
+        try:
+            fees = exchange.fetch_trading_fee(symbol)
+            taker = fees.get('taker', fees.get('maker', default))
+            rate = float(taker)
+        except Exception as e:
+            logger.warning(f"Could not fetch trading fee for {symbol}: {e}. Using default {default}")
+            rate = default
 
     # Store in Redis
     if redis_client:
