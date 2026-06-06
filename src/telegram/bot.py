@@ -20,7 +20,7 @@ class TelegramBot:
         self.keyboard = ReplyKeyboardMarkup(
             [
                 [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
-                [KeyboardButton("💰 Profit"), KeyboardButton("📊 Performance")],
+                [KeyboardButton("💰 Profit"), KeyboardButton("🚀 Performance")],
                 [KeyboardButton("📰 News"), KeyboardButton("⚠️ Risk")],
                 [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
             ],
