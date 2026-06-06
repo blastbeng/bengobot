@@ -1061,6 +1061,14 @@ class TradingEngine:
                 for t in recent_trades
             ]
 
+            # Fetch minimum order size for this symbol
+            market = self.exchange.markets.get(symbol, {})
+            limits = market.get('limits', {})
+            min_amount_raw = limits.get('amount', {}).get('min')
+            min_cost_raw = limits.get('cost', {}).get('min')
+            min_order_amount = float(min_amount_raw) if min_amount_raw is not None else None
+            min_order_cost = float(min_cost_raw) if min_cost_raw is not None else None
+
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
@@ -1106,6 +1114,8 @@ class TradingEngine:
                 raw_candles=raw_candles,
                 recent_trades=recent_trades_summary,
                 historical_ohlcv=historical_ohlcv,
+                min_order_amount=min_order_amount,
+                min_order_cost=min_order_cost,
             )
             response = await asyncio.to_thread(get_cached_llm_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)

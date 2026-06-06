@@ -561,6 +561,8 @@ def build_strategy_prompt(
     raw_candles: Optional[List[List]] = None,
     recent_trades: Optional[List[Dict[str, Any]]] = None,
     historical_ohlcv: Optional[List[List]] = None,
+    min_order_amount: Optional[float] = None,
+    min_order_cost: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -571,6 +573,18 @@ Open positions: {json.dumps(open_positions)}
 Per-coin budget (balance / max_coins): {per_coin_budget:.2f} {symbol.split('/')[1]}
 Maximum coins to trade: {max_coins}
 """
+    base_coin = symbol.split('/')[0]
+    quote_coin = symbol.split('/')[1]
+    if min_order_amount is not None or min_order_cost is not None:
+        prompt += f"\nMinimum order size for {symbol}:"
+        if min_order_amount is not None:
+            prompt += f" {min_order_amount} {base_coin}"
+        if min_order_cost is not None:
+            prompt += f" (or {min_order_cost} {quote_coin} cost)"
+        prompt += (
+            ". Your position_size_fraction must result in an order that meets both the minimum amount "
+            "and the minimum cost. Use the current price to convert between amount and cost.\n"
+        )
     if assigned_timeframe:
         prompt += f"\nAssigned trading timeframe for this coin: {assigned_timeframe}. Base your decision primarily on the OHLCV data for this timeframe.\n"
 
