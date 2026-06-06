@@ -105,7 +105,7 @@ def _analyze_sentiment(text: str) -> Dict[str, Any]:
 def _is_relevant(symbol: str, title: str, summary: str) -> bool:
     """Return True if the article is likely relevant to the trading symbol."""
     text = f"{title} {summary}".lower()
-    sym_lower = symbol.lower()
+    sym_lower = symbol.split("/")[0].lower()
     # Must mention the symbol at least once
     if sym_lower not in text:
         return False
@@ -326,7 +326,7 @@ def _fetch_newsapi(symbol: str) -> List[Dict[str, str]]:
         logger.info(f"Fetching NewsAPI for {symbol}...")
         url = "https://newsapi.org/v2/everything"
         params = {
-            "q": f"{symbol} crypto",
+            "q": f"{symbol.split('/')[0]} crypto",
             "language": "en",
             "sortBy": "publishedAt",
             "pageSize": settings.NEWS_MAX_ARTICLES_PER_SYMBOL,
@@ -374,7 +374,7 @@ def _fetch_twitter(symbol: str) -> List[Dict[str, str]]:
         _get_rate_limiter().wait("twitter")
         logger.info(f"Fetching Twitter for {symbol}...")
         client = tweepy.Client(bearer_token=settings.TWITTER_BEARER_TOKEN, timeout=settings.NEWS_HTTP_TIMEOUT_SECONDS)
-        query = f"${symbol} crypto -is:retweet lang:en"
+        query = f"${symbol.split('/')[0]} crypto -is:retweet lang:en"
         tweets = client.search_recent_tweets(
             query=query,
             max_results=min(settings.NEWS_MAX_ARTICLES_PER_SYMBOL, 10),
@@ -423,7 +423,7 @@ def _fetch_reddit(symbol: str) -> List[Dict[str, str]]:
             timeout=settings.NEWS_HTTP_TIMEOUT_SECONDS,
         )
         submissions = reddit.subreddit("all").search(
-            f"{symbol} crypto",
+            f"{symbol.split('/')[0]} crypto",
             sort="relevance",
             time_filter="week",
             limit=settings.NEWS_MAX_ARTICLES_PER_SYMBOL,
@@ -475,7 +475,7 @@ def _fetch_facebook(symbol: str) -> List[Dict[str, str]]:
             if not message:
                 continue
             # Simple relevance check: symbol appears in the post
-            if symbol.lower() not in message.lower():
+            if symbol.split('/')[0].lower() not in message.lower():
                 continue
             sentiment = _analyze_sentiment(message)
             articles.append({
@@ -506,7 +506,7 @@ def _fetch_youtube(symbol: str) -> List[Dict[str, str]]:
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {
             "part": "snippet",
-            "q": f"{symbol} crypto",
+            "q": f"{symbol.split('/')[0]} crypto",
             "type": "video",
             "maxResults": settings.YOUTUBE_MAX_RESULTS,
             "order": "date",
@@ -943,7 +943,7 @@ def _fetch_rss(symbol: str) -> List[Dict[str, str]]:
                 title = entry.get("title", "")
                 summary = entry.get("summary", "") or entry.get("description", "")
                 combined = f"{title} {summary}".lower()
-                if symbol.lower() not in combined:
+                if symbol.split("/")[0].lower() not in combined:
                     continue
                 text = f"{title} {summary}"
                 sentiment = _analyze_sentiment(text)
