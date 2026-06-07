@@ -43,6 +43,17 @@ class Settings(BaseSettings):
             raise ValueError("MIN_ATR_PCT_FOR_TRADE must be positive")
         return v
 
+    # Maximum allowed spread as a percentage. Coins with higher spread are skipped
+    # to avoid excessive slippage costs.
+    MAX_SPREAD_PCT: float = 1.0  # 1%
+
+    @field_validator("MAX_SPREAD_PCT")
+    @classmethod
+    def validate_max_spread_pct(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("MAX_SPREAD_PCT must be positive")
+        return v
+
     # Maximum allowed daily realized loss as a fraction of initial balance.
     # If the day's cumulative realized P&L falls below this threshold, trading is paused until the next day.
     # Example: 0.05 = 5% loss limit.

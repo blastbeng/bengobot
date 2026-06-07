@@ -1251,6 +1251,18 @@ class TradingEngine:
                     mid_price_bias = (mid - best_bid) / (best_ask - best_bid) - 0.5  # range -0.5 to +0.5
                     mid_price_bias *= 2  # scale to -1..1
 
+            # --- Spread filter: skip coins with excessive spread ---
+            if spread_pct is not None and spread_pct > settings.MAX_SPREAD_PCT:
+                logger.info(
+                    f"Skipping {symbol}: spread {spread_pct:.4f}% exceeds maximum "
+                    f"({settings.MAX_SPREAD_PCT:.4f}%)"
+                )
+                if self.notifier:
+                    await self.notifier.send_notification(
+                        f"📉 Skipping {symbol}: spread too high ({spread_pct:.4f}%)"
+                    )
+                return
+
             # Fee rate for this symbol
             fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
 
@@ -1378,6 +1390,7 @@ class TradingEngine:
                 atr=atr,
                 price=current_price,
                 spread_pct=spread_pct,
+                max_spread_pct=settings.MAX_SPREAD_PCT,
             )
 
             # Log raw response if validation turned a non-HOLD into HOLD
@@ -1446,7 +1459,7 @@ class TradingEngine:
                 return
 
             if validated.action != "HOLD":
-                await self._execute_signal(symbol, validated, timeframe=assigned_tf, atr=atr)
+                await self._execute_signal(symbol, validated, timeframe=assigned_tf, atr=atr, spread_pct=spread_pct)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
             if self.notifier:
@@ -1826,7 +1839,7 @@ class TradingEngine:
             except Exception as e:
                 logger.error(f"Risk check failed for {symbol}: {e}")
 
-    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None):
+    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None, spread_pct: Optional[float] = None):
         """Execute a BUY or SELL signal."""
         base, quote = symbol.split("/")
         balance = await asyncio.to_thread(self.trader.fetch_balance)
@@ -1838,9 +1851,12 @@ class TradingEngine:
             # Use LLM-provided risk parameters directly (no hardcoded minimums)
             fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
             tp_pct = params["take_profit_pct"]
-            # Reject trade if take-profit is too low to cover fees
+            # Reject trade if take-profit is too low to cover fees and spread
             if fee_rate > 0:
-                min_tp_pct = (1.0 / ((1.0 - fee_rate) ** 2)) - 1.0 + 0.001
+                min_tp_pct = (1.0 / ((1.0 - fee_rate) ** 2)) - 1.0
+                if spread_pct is not None and spread_pct > 0:
+                    min_tp_pct += spread_pct / 100.0
+                min_tp_pct += 0.001
                 if tp_pct <= min_tp_pct:
                     logger.info(
                         f"Skipping BUY {symbol}: take_profit_pct {tp_pct:.4%} below minimum {min_tp_pct:.4%} to cover fees"
