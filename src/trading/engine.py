@@ -778,17 +778,21 @@ class TradingEngine:
                 # Volatility proxy: use 24h change % (capped at 20%)
                 vola_score = min(1.0, change_24h / 20.0)
 
-                # Spread: fetch from order book (we'll approximate with a quick call, but to avoid extra API calls,
-                # we can use a default or compute later; for now use a placeholder or skip)
-                # We'll compute spread later in _process_coin, but for coin selection we can use a rough estimate.
-                # For simplicity, we'll set spread_score = 0.5 (neutral) and let the LLM use the detailed spread later.
-                spread_score = 0.5
+                # Spread score: lower spread is better (1.0 for 0% spread, 0.0 for >=1% spread)
+                sp = coin_spreads.get(sym)
+                if sp is not None:
+                    spread_score = max(0.0, 1.0 - sp / 1.0)  # 1% spread -> score 0
+                else:
+                    spread_score = 0.5  # unknown
 
-                # Momentum: use 24h change direction (positive = 1, negative = 0.5)
+                # Depth score: log scale, cap at 1.0
+                depth = coin_depths.get(sym, 0)
+                depth_score = min(1.0, math.log10(depth + 1) / 6.0) if depth > 0 else 0.0
+
                 momentum_score = 1.0 if (t.get('percentage', 0) or 0) > 0 else 0.5
 
-                # Composite score (weights can be adjusted)
-                score = (0.3 * vol_score + 0.3 * vola_score + 0.2 * spread_score + 0.2 * momentum_score)
+                # Composite score (weights adjusted to include depth)
+                score = (0.25 * vol_score + 0.25 * vola_score + 0.25 * spread_score + 0.15 * depth_score + 0.10 * momentum_score)
                 coin_scores[sym] = round(score, 3)
             except Exception:
                 coin_scores[sym] = 0.0
