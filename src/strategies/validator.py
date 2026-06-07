@@ -58,10 +58,6 @@ def validate_signal(
         tp = params["take_profit_pct"]
         if not isinstance(tp, (int, float)) or not (0 < tp < 10.0):
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid take_profit_pct")
-        if fee_rate is not None:
-            min_tp = 2 * fee_rate + 0.001
-            if tp < min_tp:
-                return Signal(action="HOLD", confidence=0.0, reasoning=f"take_profit_pct too low to cover fees (min {min_tp})")
         trailing = params["trailing_stop"]
         if not isinstance(trailing, bool):
             return Signal(action="HOLD", confidence=0.0, reasoning="trailing_stop must be boolean")
