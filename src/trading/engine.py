@@ -35,7 +35,7 @@ from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm
 from src.strategies.validator import validate_signal
 from src.utils.redis_client import get_redis_client
-from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance, store_news_articles, get_aggregate_sentiment_from_db, get_ohlcv, get_latest_ohlcv_timestamp, insert_ohlcv_batch
+from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance, store_news_articles, get_aggregate_sentiment_from_db, get_news_for_symbol, get_ohlcv, get_latest_ohlcv_timestamp, insert_ohlcv_batch
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,22 @@ class TradingEngine:
                 compound = agg_sent["avg_compound"]
                 sentiment_label = "positive" if compound > 0.05 else "negative" if compound < -0.05 else "neutral"
                 return f"📰 {sentiment_label} ({compound:+.2f}, {agg_sent['total_articles']} articles)"
+        except Exception:
+            pass
+        return ""
+
+    def _get_news_summary(self, symbol: str) -> str:
+        """Return a very short summary of the latest news article for the symbol."""
+        if not settings.NEWS_ENABLED:
+            return ""
+        try:
+            base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+            articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+            if articles:
+                # Use the most recent article's title, truncated
+                title = articles[0].get("title", "")
+                if title:
+                    return title[:80] + ("..." if len(title) > 80 else "")
         except Exception:
             pass
         return ""
@@ -1175,7 +1191,11 @@ class TradingEngine:
                 if indicator_str:
                     msg += f"\n📊 {indicator_str}"
                 if sentiment_str:
-                    msg += f"\n{sentiment_str}"
+                    news_summary = self._get_news_summary(symbol)
+                    if news_summary:
+                        msg += f"\n{sentiment_str} – {news_summary}"
+                    else:
+                        msg += f"\n{sentiment_str}"
                 await self.notifier.send_notification(msg)
 
             # Prevent SELL without an open position (no shorting)
