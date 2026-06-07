@@ -1934,6 +1934,10 @@ class TradingEngine:
                     reason_label = reason_labels.get(exit_reason, exit_reason) if exit_reason else None
                     reason_str = f" [{reason_label}]" if reason_label else ""
                     sell_msg = f"🔴 SELL{reason_str} {symbol}: {order['amount']:.6f} @ {order['price']:.4f}"
+                    # Add profit/loss info
+                    if pos:
+                        pnl_pct = (realized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
+                        sell_msg += f" | P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%)"
                     await self.notifier.send_notification(sell_msg)
             except Exception as e:
                 logger.error(f"Sell order failed for {symbol}: {e}")
