@@ -8,6 +8,7 @@ from src.trading.engine import TradingEngine
 from src.utils.redis_client import get_redis_client
 from src.database import set_telegram_chat_id, get_telegram_chat_id, get_news_for_symbol
 from src.llm.prompts import _format_news_for_prompt
+from src.llm.cache import get_cached_llm_response
 
 logger = logging.getLogger(__name__)
 
@@ -332,34 +333,49 @@ class TelegramBot:
     async def cmd_news(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
             return
-        """Show recent news for all currently tracked coins."""
+        """Show LLM-generated news summaries for all tracked coins (same as web card)."""
         try:
             coins = self.engine.current_coins
             if not coins:
                 await update.message.reply_text("No coins currently tracked.")
                 return
 
-            await update.message.reply_text("Fetching latest news...")
+            await update.message.reply_text("Generating news summaries...")
             messages = []
             for entry in coins:
                 symbol = entry["symbol"]
                 base_coin = symbol.split("/")[0] if "/" in symbol else symbol
                 articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
-                if articles:
-                    formatted = _format_news_for_prompt(articles)
-                    messages.append(f"*{base_coin}*\n{formatted}")
+                if not articles:
+                    summary = "No recent news."
                 else:
-                    messages.append(f"*{base_coin}*\nNo recent news.")
+                    try:
+                        formatted = _format_news_for_prompt(articles)
+                        prompt = (
+                            f"Here are recent news headlines and summaries for {base_coin}:\n\n"
+                            f"{formatted}\n\n"
+                            "Based on these articles, write a single very short sentence (max 15 words) "
+                            "that explains the overall sentiment and the main reason for it. "
+                            "Do not include any other text."
+                        )
+                        summary = await asyncio.to_thread(get_cached_llm_response, prompt, "", ttl=300)
+                        summary = summary.strip()
+                        if len(summary) > 120:
+                            summary = summary[:117] + "..."
+                    except Exception:
+                        summary = "Could not generate summary."
+
+                messages.append(f"<b>{symbol}</b>\n{summary}")
 
             full_text = "\n\n".join(messages)
-            # Send as plain text; split only if needed (no parse_mode to avoid entity errors)
+            # Split if too long for Telegram
             if len(full_text) > 4000:
                 for i in range(0, len(full_text), 4000):
-                    await update.message.reply_text(full_text[i:i+4000], parse_mode=None)
+                    await update.message.reply_text(full_text[i:i+4000], parse_mode='HTML')
             else:
-                await update.message.reply_text(full_text, parse_mode=None)
+                await update.message.reply_text(full_text, parse_mode='HTML')
         except Exception as e:
-            logger.error(f"Failed to fetch news: {e}", exc_info=True)
+            logger.error(f"Failed to generate news summaries: {e}", exc_info=True)
             await update.message.reply_text("⚠️ Could not retrieve news.", reply_markup=self.keyboard)
 
     async def cmd_news_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
