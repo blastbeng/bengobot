@@ -117,6 +117,18 @@ def validate_signal(
             mpp = params["min_profit_per_trade"]
             if not isinstance(mpp, (int, float)) or mpp < 0:
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid min_profit_per_trade")
+        if "min_risk_reward_ratio" in params:
+            mrr = params["min_risk_reward_ratio"]
+            if not isinstance(mrr, (int, float)) or mrr <= 0:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid min_risk_reward_ratio")
+            # Enforce the ratio if both sl and tp are available
+            if sl is not None and tp is not None:
+                if tp / sl < mrr:
+                    return Signal(
+                        action="HOLD",
+                        confidence=0.0,
+                        reasoning=f"Risk/reward ratio {tp/sl:.2f} is below minimum {mrr:.2f}"
+                    )
 
         # Logical consistency checks (no hardcoded values)
         if sl is not None and tp <= sl:
