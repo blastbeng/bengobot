@@ -827,7 +827,7 @@ You MUST include the following risk parameters in the "parameters" object:
 You may also include optional parameters: stop_loss_method, stop_loss_atr_multiple, trailing_stop_activation_pct, max_risk_per_trade_pct, entry_confidence_threshold. See the system prompt for details.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
-**Fee awareness:** You MUST account for trading fees when setting take-profit and trailing stop distances. Ensure that after deducting fees (both entry and exit), a take-profit or trailing stop exit results in a net profit. The bot will enforce a minimum take-profit percentage of at least 2× the fee rate plus a small margin.
+**Fee awareness:** You MUST account for trading fees when setting take-profit and trailing stop distances. Ensure that after deducting fees (both entry and exit), a take-profit or trailing stop exit results in a net profit. You must ensure that the take-profit percentage is high enough to cover both entry and exit fees and still yield a net profit. The bot will not enforce any minimum; it is entirely your responsibility.
 
 You are trading spot only (no shorting). Only output SELL if you currently hold the coin.
 
