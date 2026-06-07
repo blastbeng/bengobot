@@ -26,7 +26,7 @@ def get_ollama_response(prompt: str, system_prompt: str = "") -> str:
     }
 
     try:
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
