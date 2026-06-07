@@ -290,8 +290,9 @@ Key principles:
   - 0.0 → no conviction (should be HOLD).
   - 0.5 → moderate belief.
   - 1.0 → absolute certainty.
-  The bot will **automatically scale position size** based on this confidence: lower confidence → smaller position, higher confidence → larger position.
-  You may still output BUY/SELL with lower confidence; the trade will be executed with reduced risk.
+  **You must set `position_size_fraction` yourself to reflect your confidence, risk level, and any other factors.**
+  The engine will NOT scale the position size automatically – it will use exactly the fraction you provide.
+  Therefore, if you have low confidence, set a smaller `position_size_fraction`; if high confidence, you may set a larger one.
   Only output HOLD when you have no directional edge at all.
 - Only trade coins with strong, confirmed short-term momentum and sufficient volatility to cover fees. Avoid low-volatility or choppy (sideways) markets entirely.
 - You will receive raw OHLCV candle data. Compute your own technical indicators (RSI, MACD, Bollinger Bands, moving averages, etc.) from this data. Use them to time entries and exits. Require confirmation from at least two independent indicators before taking a trade.
@@ -305,6 +306,7 @@ Example: If ATR=50 and current price=5000, a 2× ATR stop distance is 100, so st
 - If the account is in drawdown (drawdown_pct > 5%), reduce position sizes further and be extremely selective.
 - After a losing trade on a coin, avoid that coin for at least several evaluation cycles. Learn from recent trade outcomes shown in the prompt.
 - Learn from historical performance: avoid coins and strategies with poor win rates or negative average P&L.
+- **Learn from past trade outcomes for each coin.** The prompt will include a list of recent closed trades for the current coin. Use this to avoid repeating mistakes and to reinforce successful patterns. If a coin has a string of losses, be more cautious or avoid it.
 
 You will receive recent news headlines with sentiment scores for each coin. Use this information to gauge market sentiment and potential catalysts.
 - Strong positive sentiment (compound > 0.5) may justify higher confidence, larger position sizes, and longer max hold times.
@@ -715,10 +717,12 @@ Maximum coins to trade: {max_coins}
             exit_reason = t.get("exit_reason", "unknown")
             hold_time = t.get("hold_time_seconds", None)
             strategy = t.get("strategy_type", "unknown")
+            cost_basis = t.get("cost_basis", amount * entry_price)
+            pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else 0.0
             hold_str = f"{hold_time:.0f}s" if hold_time is not None else "N/A"
             prompt += (
                 f"- Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Amount: {amount:.6f}, "
-                f"P&L: {pnl:+.4f}, Reason: {exit_reason}, "
+                f"P&L: {pnl:+.4f} ({pnl_pct:+.2f}%), Reason: {exit_reason}, "
                 f"Hold: {hold_str}, Strategy: {strategy}\n"
             )
         prompt += "Use these past outcomes to avoid repeating mistakes and to reinforce successful patterns.\n"
