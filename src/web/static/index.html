@@ -817,6 +817,33 @@
                 const badge = document.getElementById('mode-badge');
                 if (badge) badge.textContent = '?';
             });
+
+        // --- Screen Wake Lock (keep display on while visible) ---
+        let wakeLock = null;
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock acquired');
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Wake Lock released');
+                    });
+                } catch (err) {
+                    console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+                }
+            }
+        }
+
+        // Re-acquire wake lock when the page becomes visible again
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
+        // Initial request
+        requestWakeLock();
     </script>
 </body>
 </html>
