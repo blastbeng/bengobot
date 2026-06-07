@@ -32,19 +32,6 @@ class Settings(BaseSettings):
             raise ValueError("MAX_COINS must be at least 1")
         return v
 
-    # Maximum allowed daily realized loss as a fraction of initial balance.
-    # If the day's cumulative realized P&L falls below this threshold, trading is paused until the next day.
-    # Example: 0.05 = 5% loss limit.
-    MAX_DAILY_LOSS_PCT: float = 0.05
-
-    @field_validator("MAX_DAILY_LOSS_PCT")
-    @classmethod
-    def validate_max_daily_loss_pct(cls, v: float) -> float:
-        if v <= 0:
-            raise ValueError("MAX_DAILY_LOSS_PCT must be positive")
-        return v
-
-
     # OHLCV timeframes for multi-timeframe analysis
     OHLCV_TIMEFRAMES: list[str] = ["5m", "15m", "1h", "4h"]
 

@@ -478,6 +478,7 @@ class TradingEngine:
         current_equity = equity_series[-1] if equity_series else self.initial_balance
         drawdown_pct = ((peak - current_equity) / peak * 100) if peak > 0 else 0.0
 
+        daily_pnl = self._daily_realized_pnl()
         return {
             "coin_performance": coin_perf,
             "strategy_performance": strategy_perf,
@@ -486,6 +487,7 @@ class TradingEngine:
                 "recent_10_trades_pnl": round(total_recent_pnl, 4),
                 "trend": trend,
                 "drawdown_pct": round(drawdown_pct, 2),
+                "daily_pnl": round(daily_pnl, 4),
             },
         }
 
@@ -660,30 +662,6 @@ class TradingEngine:
         while True:
             try:
                 await self._reconcile_positions()
-
-                # --- Daily loss limit ---
-                daily_pnl = self._daily_realized_pnl()
-                max_loss = -settings.MAX_DAILY_LOSS_PCT * self.initial_balance
-                if daily_pnl <= max_loss:
-                    logger.warning(
-                        f"Daily loss limit reached: {daily_pnl:.2f} <= {max_loss:.2f}. Pausing trading."
-                    )
-                    await asyncio.to_thread(self.redis.set, "trading:paused", "1")
-                    if self.notifier:
-                        await self.notifier.send_notification(
-                            f"🛑 Daily loss limit hit ({daily_pnl:.2f} / {max_loss:.2f}). Trading paused until tomorrow."
-                        )
-
-                # Reset daily pause at midnight UTC
-                from datetime import datetime, timezone
-                now_utc = datetime.now(timezone.utc)
-                if now_utc.hour == 0 and now_utc.minute < 5:  # within first 5 minutes of the day
-                    was_paused = await asyncio.to_thread(self.redis.get, "trading:paused")
-                    if was_paused:
-                        logger.info("New day – resetting daily loss pause.")
-                        await asyncio.to_thread(self.redis.delete, "trading:paused")
-                        if self.notifier:
-                            await self.notifier.send_notification("🌅 New day – trading resumed.")
 
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                 if paused:
@@ -912,6 +890,7 @@ class TradingEngine:
             market_trend=market_trend,
             news_sentiment=news_sentiment,
             coin_indicators=coin_indicators,
+            daily_pnl=perf["equity_curve"].get("daily_pnl"),
         )
         try:
             response = await asyncio.wait_for(
@@ -975,13 +954,21 @@ class TradingEngine:
                         deduped.append(entry)
 
                 # Use the LLM's chosen number of coins to update effective_max_coins
-                if llm_max_coins is not None and isinstance(llm_max_coins, int) and 1 <= llm_max_coins <= self.effective_max_coins:
+                if llm_max_coins is not None and isinstance(llm_max_coins, int) and 0 <= llm_max_coins <= self.max_coins:
                     self.effective_max_coins = llm_max_coins
                 else:
                     # Fallback: use the length of the deduped list, capped at the engine's max
                     self.effective_max_coins = min(len(deduped), self.effective_max_coins)
 
                 self.current_coins = deduped[: self.effective_max_coins]
+
+                # If LLM explicitly chose zero coins, respect that and don't fall back to volume-based selection
+                if not deduped or self.effective_max_coins == 0:
+                    self.current_coins = []
+                    self.effective_max_coins = 0
+                    logger.info("LLM selected 0 coins – pausing trading until next evaluation.")
+                    await asyncio.to_thread(self.redis.set, last_key, now)
+                    return
 
             except json.JSONDecodeError:
                 logger.error("Failed to parse coin selection response.")

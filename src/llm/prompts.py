@@ -404,6 +404,7 @@ def build_coin_selection_prompt(
     market_trend: Optional[Dict[str, Any]] = None,
     news_sentiment: Optional[Dict[str, Dict[str, Any]]] = None,
     coin_indicators: Optional[Dict[str, Dict[str, Any]]] = None,
+    daily_pnl: Optional[float] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -474,7 +475,7 @@ Available trading pairs with market data and minimum trade cost (in {base_curren
 
 **Your primary objective is profit across short, medium, and long timeframes. Prioritize coins where you find the most profit potential, regardless of timeframe.** Prioritize coins with strong momentum, high volume, and clear trends on multiple timeframes. Avoid coins that are flat or declining on all timeframes. You may keep current coins only if they still show potential on at least one timeframe.
 
-Select between 1 and {max_coins} coins to trade. You decide the exact number based on how many high‑quality opportunities you see. If market conditions are poor, you may choose fewer coins (even just 1) to concentrate capital on the best setup. If many strong setups exist, you may select up to {max_coins}. You MUST only select coins where the per-coin budget ({per_coin_budget:.2f} {base_currency}) is greater than or equal to the coin's min_trade_cost. Skip any coin that does not meet this requirement. Prefer coins with high volume and positive momentum. You may keep some current coins if they are still promising and meet the budget requirement, or replace them.
+Select between 0 and {max_coins} coins to trade. If market conditions are extremely unfavorable (e.g., high losses, poor momentum, negative sentiment), you may select 0 coins to pause trading until the next evaluation. You decide the exact number based on how many high‑quality opportunities you see. If market conditions are poor, you may choose fewer coins (even 0 or 1) to concentrate capital on the best setup. If many strong setups exist, you may select up to {max_coins}. You MUST only select coins where the per-coin budget ({per_coin_budget:.2f} {base_currency}) is greater than or equal to the coin's min_trade_cost. Skip any coin that does not meet this requirement. Prefer coins with high volume and positive momentum. You may keep some current coins if they are still promising and meet the budget requirement, or replace them.
 
 **Use the historical performance data to guide your selection.** Prefer coins that have a positive average P&L and a win rate above 50% in recent trades. Avoid coins that have a string of losses or a negative average P&L, unless there is a strong technical or news‑driven reason to include them.
 
@@ -482,7 +483,7 @@ Each symbol can only appear once in your selection. Choose the single best timef
 
 Return a JSON object with two fields:
 - "coins": a JSON array of objects, each with "symbol" and "timeframe" (the timeframe must be one of the available timeframes, e.g., "5m", "15m", "1h", "4h").
-- "max_coins": an integer between 1 and {max_coins} indicating how many coins you actually want to trade. This must equal the length of the "coins" array.
+- "max_coins": an integer between 0 and {max_coins} indicating how many coins you actually want to trade. Set to 0 to pause trading. This must equal the length of the "coins" array.
 
 Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2}}"""
     if ohlcv_summary:
@@ -542,6 +543,8 @@ Per-strategy performance: {json.dumps(performance.get('strategy_performance', {}
 Use this historical data to select coins that have been profitable in the past, and to avoid coins with poor performance. Prefer strategies that have shown higher win rates and average P&L.
 """
         prompt += perf_text
+        if daily_pnl is not None:
+            prompt += f"Today's realized P&L: {daily_pnl:.4f} {base_currency}\n"
     prompt += (
         "\n**Important:** The engine will use your parameters exactly as you provide them. "
         "No additional scaling, clamping, or overrides will be applied. You are fully responsible "
