@@ -1527,6 +1527,30 @@ class TradingEngine:
                     )
                 return
 
+            # --- LLM‑controlled minimum depth at take-profit ---
+            min_depth_tp = params.get("min_depth_at_take_profit")
+            if min_depth_tp is not None and min_depth_tp > 0:
+                # Compute cumulative ask volume from mid to take-profit price
+                tp_pct = params["take_profit_pct"]
+                tp_price = current_price * (1 + tp_pct)
+                asks = order_book.get('asks', [])
+                cum_vol = 0.0
+                for ask in asks:
+                    if ask[0] <= tp_price:
+                        cum_vol += ask[1]
+                    else:
+                        break
+                if cum_vol < min_depth_tp:
+                    logger.info(
+                        f"Skipping {symbol}: ask depth up to take-profit ({tp_price:.4f}) is {cum_vol:.4f}, "
+                        f"below LLM minimum {min_depth_tp:.4f}"
+                    )
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⚠️ Skipping {symbol}: insufficient depth at take-profit ({cum_vol:.4f} < {min_depth_tp:.4f})"
+                        )
+                    return
+
             # Respect the LLM's execute flag – skip trade if the LLM decided not to execute
             if not getattr(validated, 'execute', True):
                 logger.info(f"LLM decided not to execute trade for {symbol}. Reason: {validated.reasoning}")
