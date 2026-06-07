@@ -260,6 +260,16 @@
     <div class="container">
         <div class="dashboard">
             <div class="card">
+                <h2>Controls</h2>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button id="btn-pause" style="padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">⏸️ Pause</button>
+                    <button id="btn-resume" style="padding:8px 16px; background:var(--green); color:#fff; border:none; border-radius:6px; cursor:pointer;">▶️ Resume</button>
+                    <button id="btn-sell-all" style="padding:8px 16px; background:var(--red); color:#fff; border:none; border-radius:6px; cursor:pointer;">💸 Sell All</button>
+                    <button id="btn-reload" style="padding:8px 16px; background:#6e7681; color:#fff; border:none; border-radius:6px; cursor:pointer;">🔄 Reload Settings</button>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Current Coins</h2>
                 <div id="coins">-</div>
             </div>
@@ -296,16 +306,6 @@
                         <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Amount</th><th>Price</th><th>Fee</th><th>Realized P&L</th><th>Exit Reason</th></tr></thead>
                         <tbody></tbody>
                     </table>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Controls</h2>
-                <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <button id="btn-pause" style="padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">⏸️ Pause</button>
-                    <button id="btn-resume" style="padding:8px 16px; background:var(--green); color:#fff; border:none; border-radius:6px; cursor:pointer;">▶️ Resume</button>
-                    <button id="btn-sell-all" style="padding:8px 16px; background:var(--red); color:#fff; border:none; border-radius:6px; cursor:pointer;">💸 Sell All</button>
-                    <button id="btn-reload" style="padding:8px 16px; background:#6e7681; color:#fff; border:none; border-radius:6px; cursor:pointer;">🔄 Reload Settings</button>
                 </div>
             </div>
 
