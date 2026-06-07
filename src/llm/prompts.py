@@ -773,6 +773,12 @@ The bot will NOT use any default values. If you omit any required parameter, the
 
 You are trading spot only (no shorting). Only output SELL if you currently hold the coin.
 
+**Execution Decision:**
+You must decide whether to actually execute this trade right now. Output a boolean field `"execute"` in your JSON.
+- Set `"execute": true` only if you are confident that entering this trade immediately will be profitable, considering all provided data (price, order book, balance, open positions, sentiment, technical indicators, fees, etc.).
+- Set `"execute": false` if you believe the trade should be skipped – for example, if the risk/reward is insufficient, the market is too choppy, or there is no clear edge.
+The `action`, `confidence`, and all other fields must still be provided as before, but the trade will only be executed when `execute` is true.
+
 Return a JSON object as specified."""
     # Add OHLCV summary if available
     if ohlcv_data:
