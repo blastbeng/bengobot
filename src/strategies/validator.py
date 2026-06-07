@@ -137,6 +137,10 @@ def validate_signal(
             mc = params["min_confidence"]
             if not isinstance(mc, (int, float)) or not (0.0 <= mc <= 1.0):
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid min_confidence")
+        if "news_sentiment_exit_threshold" in params:
+            nst = params["news_sentiment_exit_threshold"]
+            if not isinstance(nst, (int, float)) or not (-1.0 <= nst <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid news_sentiment_exit_threshold")
 
         # Logical consistency checks (no hardcoded values)
         if sl is not None and tp <= sl:
