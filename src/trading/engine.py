@@ -701,7 +701,21 @@ class TradingEngine:
                 await self._save_state()
             except Exception as e:
                 logger.error(f"Engine loop error: {e}", exc_info=True)
-            await asyncio.sleep(STRATEGY_INTERVAL)
+            # --- Dynamic sleep: wait until the next coin needs evaluation ---
+            now = time.time()
+            next_times = []
+            for coin_entry in self.current_coins:
+                symbol = coin_entry["symbol"]
+                interval = self._strategy_intervals.get(symbol, STRATEGY_INTERVAL)
+                last_eval = self._last_strategy_eval.get(symbol, 0)
+                next_times.append(last_eval + interval)
+            if next_times:
+                earliest = min(next_times)
+                sleep_seconds = max(1.0, earliest - now)
+            else:
+                sleep_seconds = STRATEGY_INTERVAL
+            logger.debug(f"Sleeping for {sleep_seconds:.1f}s until next evaluation.")
+            await asyncio.sleep(sleep_seconds)
 
     async def _reevaluate_coins(self):
         """Use LLM to select which coins to trade."""
