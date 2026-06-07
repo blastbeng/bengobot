@@ -85,6 +85,12 @@ def validate_signal(
         if not isinstance(mht, (int, float)) or mht <= 0:
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_hold_time_seconds")
 
+        if "cooldown_after_loss_seconds" not in params:
+            return Signal(action="HOLD", confidence=0.0, reasoning="Missing required parameter: cooldown_after_loss_seconds")
+        cd = params["cooldown_after_loss_seconds"]
+        if not isinstance(cd, (int, float)) or cd < 0:
+            return Signal(action="HOLD", confidence=0.0, reasoning="Invalid cooldown_after_loss_seconds")
+
         # Optional new parameters
         if "trailing_stop_activation_pct" in params:
             tsa = params["trailing_stop_activation_pct"]

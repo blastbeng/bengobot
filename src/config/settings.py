@@ -18,9 +18,6 @@ class Settings(BaseSettings):
     # Max coins to trade
     MAX_COINS: int = 10
 
-    # Cooldown after a losing trade on a symbol (seconds)
-    COOLDOWN_AFTER_LOSS_SECONDS: int = 3600  # 1 hour
-
     @field_validator("TRADING_MODE")
     @classmethod
     def validate_trading_mode(cls, v: str) -> str:

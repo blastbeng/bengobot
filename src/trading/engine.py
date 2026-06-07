@@ -68,6 +68,7 @@ class TradingEngine:
         self.trade_history: List[Dict[str, Any]] = []
         self.initial_balance: float = 0.0
         self.last_loss_time: Dict[str, float] = {}  # symbol -> timestamp of last losing trade
+        self.cooldown_durations: Dict[str, float] = {}  # symbol -> cooldown seconds set by LLM
         self.notifier = None
         self._load_state()
         # Restore paper simulator state from trade history
@@ -354,6 +355,8 @@ class TradingEngine:
                     pos["max_hold_time_seconds"] = old["max_hold_time_seconds"]
                 if "trailing_stop_activation_pct" in old:
                     pos["trailing_stop_activation_pct"] = old["trailing_stop_activation_pct"]
+                if "cooldown_after_loss_seconds" in old:
+                    pos["cooldown_after_loss_seconds"] = old["cooldown_after_loss_seconds"]
                 if "timeframe" in old:
                     pos["timeframe"] = old["timeframe"]
         # Re-apply force_close for positions still missing risk parameters
@@ -975,20 +978,22 @@ class TradingEngine:
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
 
-        # --- Cooldown after a losing trade ---
+        # --- Cooldown after a losing trade (LLM-defined) ---
         last_loss = self.last_loss_time.get(symbol)
         if last_loss is not None:
-            elapsed = time.time() - last_loss
-            if elapsed < settings.COOLDOWN_AFTER_LOSS_SECONDS:
-                remaining = settings.COOLDOWN_AFTER_LOSS_SECONDS - elapsed
-                logger.info(
-                    f"Skipping {symbol}: cooldown active ({remaining:.0f}s remaining after loss)"
-                )
-                if self.notifier:
-                    await self.notifier.send_notification(
-                        f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s"
+            cooldown = self.cooldown_durations.get(symbol, 0)
+            if cooldown > 0:
+                elapsed = time.time() - last_loss
+                if elapsed < cooldown:
+                    remaining = cooldown - elapsed
+                    logger.info(
+                        f"Skipping {symbol}: cooldown active ({remaining:.0f}s remaining after loss)"
                     )
-                return
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s"
+                        )
+                    return
 
         try:
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
@@ -1787,6 +1792,7 @@ class TradingEngine:
                     self.positions[symbol]["trailing_stop_distance_pct"] = trailing_stop_distance_pct
                     self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
                     self.positions[symbol]["trailing_stop_activation_pct"] = params.get("trailing_stop_activation_pct")
+                    self.positions[symbol]["cooldown_after_loss_seconds"] = params["cooldown_after_loss_seconds"]
                     self.positions[symbol]["timeframe"] = timeframe
                     self.positions[symbol]["indicator_config"] = signal.indicator_config
                 else:
@@ -1805,6 +1811,7 @@ class TradingEngine:
                         "trailing_stop_distance_pct": trailing_stop_distance_pct,
                         "max_hold_time_seconds": params.get("max_hold_time_seconds"),
                         "trailing_stop_activation_pct": params.get("trailing_stop_activation_pct"),
+                        "cooldown_after_loss_seconds": params["cooldown_after_loss_seconds"],
                         "timeframe": timeframe,
                         "indicator_config": signal.indicator_config,
                     }
@@ -1882,6 +1889,9 @@ class TradingEngine:
                 # Track loss timestamps for cooldown
                 if realized_pnl < 0:
                     self.last_loss_time[symbol] = time.time()
+                    # Store the cooldown duration from the position (set by LLM at BUY time)
+                    cd = pos.get("cooldown_after_loss_seconds", 0) if pos else 0
+                    self.cooldown_durations[symbol] = cd
                 tf = timeframe or (pos.get("timeframe") if pos else None)
                 order["timeframe"] = tf
                 order["strategy_type"] = signal.strategy_type

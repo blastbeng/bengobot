@@ -370,6 +370,7 @@ You MUST include the following risk parameters inside the "parameters" object fo
 - "trailing_stop_distance_pct": required if "trailing_stop" is true; a decimal between 0.001 and 0.1 (e.g., 0.01 for 1%). Must be less than stop_loss_pct. If "trailing_stop" is false, set this to null.
 - "position_size_fraction": a decimal between 0.1 and 1.0 representing the fraction of your **total available quote currency balance** to allocate to this trade (e.g., 0.5 for 50% of your entire quote balance). Must be > 0 and ≤ 1. The sum of this fraction across all coins you trade should not exceed 1.0, so leave enough capital for other opportunities.
 - "max_hold_time_seconds": a positive integer number of seconds (e.g., 3600 for 1 hour). Must be > 0.
+- "cooldown_after_loss_seconds": a non-negative integer (0 or more). If the trade results in a loss, the bot will avoid this coin for this many seconds before considering it again. Set 0 to allow immediate re-entry.
 
 You may also include the following optional parameters to fine-tune risk management:
 
@@ -537,7 +538,7 @@ Use this historical data to select coins that have been profitable in the past, 
         "\n**Important:** The engine will use your parameters exactly as you provide them. "
         "No additional scaling, clamping, or overrides will be applied. You are fully responsible "
         "for setting stop_loss_pct, take_profit_pct, position_size_fraction, trailing_stop, "
-        "max_hold_time_seconds, and all optional parameters. Make sure they are appropriate for "
+        "max_hold_time_seconds, cooldown_after_loss_seconds, and all optional parameters. Make sure they are appropriate for "
         "the current market conditions, your confidence, and the account's risk profile.\n"
     )
     return prompt
@@ -825,7 +826,7 @@ If the position is already in profit, consider trailing the stop.
 - Williams %R: similar to Stochastic, ranges -100 to 0. Values above -20 overbought, below -80 oversold.
 
 You MUST include the following risk parameters in the "parameters" object:
-- stop_loss_pct (required unless using stop_loss_method="atr_multiple"), take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds.
+- stop_loss_pct (required unless using stop_loss_method="atr_multiple"), take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds, cooldown_after_loss_seconds.
 You may also include optional parameters: stop_loss_method, stop_loss_atr_multiple, trailing_stop_activation_pct, max_risk_per_trade_pct, entry_confidence_threshold. See the system prompt for details.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
