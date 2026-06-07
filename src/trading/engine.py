@@ -1089,6 +1089,20 @@ class TradingEngine:
                         cci = compute_cci(highs, lows, closes, period=cci_period)
                         williams_r = compute_williams_r(highs, lows, closes, period=willr_period)
 
+            # --- Volatility filter: skip coins with ATR% too low to cover fees ---
+            if atr is not None and ticker.get('last', 0) > 0:
+                atr_pct = atr / ticker['last']
+                if atr_pct < settings.MIN_ATR_PCT_FOR_TRADE:
+                    logger.info(
+                        f"Skipping {symbol}: ATR% ({atr_pct:.4%}) below minimum "
+                        f"({settings.MIN_ATR_PCT_FOR_TRADE:.4%})"
+                    )
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"📉 Skipping {symbol}: volatility too low (ATR {atr_pct:.4%})"
+                        )
+                    return
+
             # --- Market regime classification ---
             market_regime = "unknown"
             if adx is not None and atr is not None and atr > 0:

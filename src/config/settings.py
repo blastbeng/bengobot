@@ -32,6 +32,17 @@ class Settings(BaseSettings):
             raise ValueError("MAX_COINS must be at least 1")
         return v
 
+    # Minimum ATR as a percentage of price to consider a coin tradeable.
+    # Coins with lower volatility are unlikely to move enough to cover fees.
+    MIN_ATR_PCT_FOR_TRADE: float = 0.005   # 0.5%
+
+    @field_validator("MIN_ATR_PCT_FOR_TRADE")
+    @classmethod
+    def validate_min_atr_pct(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("MIN_ATR_PCT_FOR_TRADE must be positive")
+        return v
+
     # OHLCV timeframes for multi-timeframe analysis
     OHLCV_TIMEFRAMES: list[str] = ["5m", "15m", "1h", "4h"]
 
