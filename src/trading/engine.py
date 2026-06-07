@@ -1206,6 +1206,7 @@ class TradingEngine:
                 except Exception as e:
                     logger.debug(f"Could not fetch aggregate sentiment for {symbol}: {e}")
 
+            remaining = max(0.0, base_balance - self._cycle_spent)
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
@@ -1256,6 +1257,8 @@ class TradingEngine:
                 all_coins=self.current_coins,
                 past_trades=past_trades,
                 aggregate_sentiment=aggregate_sentiment,
+                cycle_spent=self._cycle_spent,
+                remaining_balance=remaining,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:

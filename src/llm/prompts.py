@@ -591,6 +591,8 @@ def build_strategy_prompt(
     all_coins: Optional[List[Dict[str, str]]] = None,
     past_trades: Optional[List[Dict[str, Any]]] = None,
     aggregate_sentiment: Optional[Dict[str, Any]] = None,
+    cycle_spent: Optional[float] = None,
+    remaining_balance: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -614,6 +616,13 @@ Your total available {base_currency} balance: {base_balance:.2f}
 Suggested equal share per coin (balance / max_coins): {per_coin_budget:.2f} {base_currency}
 Maximum coins to trade: {max_coins}
 """
+    if cycle_spent is not None and remaining_balance is not None:
+        prompt += (
+            f"Amount already allocated to other coins in this cycle: {cycle_spent:.2f} {base_currency}\n"
+            f"Remaining available for this coin: {remaining_balance:.2f} {base_currency}\n"
+            "Your position_size_fraction must not require more than the remaining balance. "
+            "If the remaining balance is low, reduce your fraction accordingly or output HOLD.\n"
+        )
     prompt += (
         f"**position_size_fraction** now represents a fraction of your **total {base_currency} balance** (0.1 to 1.0). "
         f"You may allocate more than the equal share for high‑confidence/high‑profit opportunities, and less for riskier ones. "
