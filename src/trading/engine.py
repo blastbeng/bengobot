@@ -1188,14 +1188,14 @@ class TradingEngine:
                 msg = f"{emoji} {symbol}: {validated.action} (confidence: {validated.confidence:.2f}) – {validated.reasoning}"
                 if getattr(validated, 'backtest_summary', None):
                     msg += f"\n📈 Backtest: {validated.backtest_summary}"
-                if indicator_str:
-                    msg += f"\n📊 {indicator_str}"
                 if sentiment_str:
                     news_summary = self._get_news_summary(symbol)
                     if news_summary:
                         msg += f"\n{sentiment_str} – {news_summary}"
                     else:
                         msg += f"\n{sentiment_str}"
+                if indicator_str:
+                    msg += f"\n📊 {indicator_str}"
                 await self.notifier.send_notification(msg)
 
             # Prevent SELL without an open position (no shorting)
