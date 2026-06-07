@@ -131,6 +131,26 @@ def validate_signal(
             lpl = params["lock_profit_level_pct"]
             if not isinstance(lpl, (int, float)) or not (0 < lpl < lpa):
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid lock_profit_level_pct (must be < activation)")
+        if "partial_take_profit_pct" in params:
+            ptp = params["partial_take_profit_pct"]
+            if not isinstance(ptp, (int, float)) or not (0 < ptp <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid partial_take_profit_pct")
+            if "partial_take_profit_fraction" not in params:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Missing partial_take_profit_fraction")
+            ptf = params["partial_take_profit_fraction"]
+            if not isinstance(ptf, (int, float)) or not (0 < ptf <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid partial_take_profit_fraction")
+            # Enforce that partial TP covers fees+spread (same minimum as main TP)
+            if fee_rate is not None and fee_rate > 0:
+                min_tp_pct = (1.0 / ((1.0 - fee_rate) ** 2)) - 1.0
+                if spread_pct is not None and spread_pct > 0:
+                    min_tp_pct += spread_pct / 100.0
+                min_tp_pct += 0.001
+                if ptp <= min_tp_pct:
+                    return Signal(action="HOLD", confidence=0.0, reasoning=f"partial_take_profit_pct ({ptp:.4%}) too low to cover fees+spread (min {min_tp_pct:.4%})")
+            # Partial TP must be less than main TP
+            if ptp >= tp:
+                return Signal(action="HOLD", confidence=0.0, reasoning="partial_take_profit_pct must be less than take_profit_pct")
         if "max_risk_per_trade_pct" in params:
             mrp = params["max_risk_per_trade_pct"]
             if not isinstance(mrp, (int, float)) or not (0 < mrp <= 1.0):

@@ -382,6 +382,8 @@ You may also include the following optional parameters to fine-tune risk managem
 - "breakeven_activation_pct": an optional decimal between 0 and 1.0 (e.g., 0.005 for 0.5%). If set, once the price rises by this percentage above your entry, the stop‑loss will be moved to the exact break‑even price (covering the exit fee). This locks in a risk‑free trade. Use this for scalping or when you want to protect a small gain.
 - "lock_profit_activation_pct": an optional decimal between 0 and 1.0 (e.g., 0.005 for 0.5%). If set, once the price rises by this percentage above your entry, the stop‑loss will be moved to a guaranteed profit level (see lock_profit_level_pct). Use this to scalp small gains.
 - "lock_profit_level_pct": required if lock_profit_activation_pct is set. A decimal between 0 and lock_profit_activation_pct (e.g., 0.003 for 0.3%). The new stop‑loss level will be set to entry_price * (1 + lock_profit_level_pct). This locks in a minimum profit even if the price reverses.
+- "partial_take_profit_pct": an optional decimal between 0 and 1.0 (e.g., 0.003 for 0.3%). If set, the bot will sell a fraction of the position when the price rises by this percentage above the entry. Use this to scalp a quick small profit while holding the rest for a larger move.
+- "partial_take_profit_fraction": required if partial_take_profit_pct is set. A decimal between 0 and 1.0 (e.g., 0.5 for 50%). The fraction of the current position to sell at the partial take‑profit level.
 - "max_risk_per_trade_pct": a decimal between 0 and 1.0 (e.g., 0.02 for 2% of portfolio). The position size will be limited so that the potential loss (entry - stop) does not exceed this fraction of your total portfolio value. If omitted, position sizing uses only position_size_fraction.
 
 The bot will NOT use any default values for required parameters. If you omit any required parameter, the trade will be skipped. Optional parameters are not required; if omitted, the bot will use its standard behavior.
@@ -835,7 +837,7 @@ If the position is already in profit, consider trailing the stop.
 
 You MUST include the following risk parameters in the "parameters" object:
 - stop_loss_pct (required unless using stop_loss_method="atr_multiple"), take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds, cooldown_after_loss_seconds.
-You may also include optional parameters: stop_loss_method, stop_loss_atr_multiple, trailing_stop_activation_pct, breakeven_activation_pct, lock_profit_activation_pct, lock_profit_level_pct, max_risk_per_trade_pct, entry_confidence_threshold. See the system prompt for details.
+You may also include optional parameters: stop_loss_method, stop_loss_atr_multiple, trailing_stop_activation_pct, breakeven_activation_pct, lock_profit_activation_pct, lock_profit_level_pct, partial_take_profit_pct, partial_take_profit_fraction, max_risk_per_trade_pct, entry_confidence_threshold. See the system prompt for details.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
 **Fee awareness:** You MUST account for trading fees when setting take-profit and trailing stop distances. Ensure that after deducting fees (both entry and exit), a take-profit or trailing stop exit results in a net profit. You must ensure that the take-profit percentage is high enough to cover both entry and exit fees and still yield a net profit. The bot will not enforce any minimum; it is entirely your responsibility.

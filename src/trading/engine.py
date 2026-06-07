@@ -1691,6 +1691,101 @@ class TradingEngine:
                             pos["stop_loss"] = new_stop
                             logger.debug(f"Lock-profit activated for {symbol}: new stop {new_stop:.4f} (guaranteed +{lock_level:.2%})")
 
+                # --- Partial take-profit (scalping) ---
+                partial_tp_pct = pos.get("partial_take_profit_pct")
+                partial_tp_fraction = pos.get("partial_take_profit_fraction")
+                if (
+                    partial_tp_pct is not None
+                    and partial_tp_fraction is not None
+                    and not pos.get("partial_tp_triggered", False)
+                ):
+                    entry_price = pos["price"]
+                    if current_price >= entry_price * (1 + partial_tp_pct):
+                        # Execute partial sell
+                        sell_amount = pos["amount"] * partial_tp_fraction
+                        logger.info(
+                            f"Partial take-profit triggered for {symbol}: selling {sell_amount:.6f} "
+                            f"({partial_tp_fraction:.0%}) at {current_price:.4f}"
+                        )
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"🔸 Partial TP {symbol}: selling {sell_amount:.6f} @ {current_price:.4f}"
+                            )
+                        # Perform the partial sell
+                        try:
+                            order = await asyncio.to_thread(
+                                self.trader.create_market_sell_order, symbol, sell_amount
+                            )
+                        except Exception as e:
+                            logger.error(f"Partial sell failed for {symbol}: {e}")
+                            # Mark as triggered anyway to avoid repeated attempts
+                            pos["partial_tp_triggered"] = True
+                            continue
+
+                        # Compute realized P&L for the sold portion
+                        fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
+                        fee = order.get('fee', {})
+                        fee_cost = float(fee.get('cost', 0.0) or 0.0)
+                        fee_currency = fee.get('currency', '')
+                        if fee_cost == 0.0:
+                            fee_cost = order['cost'] * fee_rate
+                            fee_currency = symbol.split('/')[1]
+                            order['fee'] = {'cost': fee_cost, 'currency': fee_currency}
+                        net_quote = order['cost'] - (fee_cost if fee_currency == symbol.split('/')[1] else 0.0)
+                        cost_basis = pos.get("cost_basis", pos["amount"] * pos["price"])
+                        net_base = pos.get("net_base", pos["amount"])
+                        prorated_cost_basis = cost_basis * (sell_amount / net_base) if net_base > 0 else 0.0
+                        realized_pnl = net_quote - prorated_cost_basis
+
+                        # Record the partial sell as a trade
+                        trade = {
+                            "symbol": symbol,
+                            "side": "sell",
+                            "amount": sell_amount,
+                            "price": order["price"],
+                            "cost": order["cost"],
+                            "fee": order["fee"],
+                            "timestamp": order["timestamp"],
+                            "exit_reason": "partial_take_profit",
+                            "realized_pnl": realized_pnl,
+                            "cost_basis": prorated_cost_basis,
+                            "strategy_type": pos.get("strategy_type", "unknown"),
+                            "timeframe": pos.get("timeframe"),
+                            "hold_time_seconds": (order["timestamp"] - pos["timestamp"]) / 1000.0 if "timestamp" in pos else None,
+                        }
+                        self.trade_history.append(trade)
+                        await asyncio.to_thread(insert_trade, trade)
+
+                        # Update position: reduce amount and adjust cost basis
+                        pos["amount"] -= sell_amount
+                        pos["cost_basis"] -= prorated_cost_basis
+                        pos["net_base"] -= sell_amount
+                        if pos["net_base"] > 0:
+                            pos["price"] = pos["cost_basis"] / pos["net_base"]
+                        else:
+                            # Position fully closed (should not happen if fraction < 1)
+                            self.positions.pop(symbol, None)
+                            logger.warning(f"Partial TP closed entire position for {symbol} unexpectedly.")
+                            continue
+
+                        # Mark partial TP as triggered so it won't fire again
+                        pos["partial_tp_triggered"] = True
+
+                        # Move stop to breakeven after partial TP (if not already above entry)
+                        if pos.get("stop_loss") is not None and pos["stop_loss"] < entry_price:
+                            pos["stop_loss"] = entry_price
+                            logger.debug(f"Stop moved to breakeven after partial TP for {symbol}")
+
+                        # Notify
+                        if self.notifier:
+                            pnl_pct = (realized_pnl / prorated_cost_basis * 100) if prorated_cost_basis > 0 else 0.0
+                            await self.notifier.send_notification(
+                                f"🔸 Partial TP {symbol}: sold {sell_amount:.6f} @ {order['price']:.4f} | "
+                                f"P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%) | Remaining: {pos['amount']:.6f}"
+                            )
+
+                        # Continue to check other risk conditions for the remaining position
+
                 # Time‑based exit (LLM‑defined max hold time)
                 max_hold = pos.get("max_hold_time_seconds")
                 if max_hold is not None and max_hold > 0:
@@ -1878,6 +1973,9 @@ class TradingEngine:
                     self.positions[symbol]["breakeven_activation_pct"] = params.get("breakeven_activation_pct")
                     self.positions[symbol]["lock_profit_activation_pct"] = params.get("lock_profit_activation_pct")
                     self.positions[symbol]["lock_profit_level_pct"] = params.get("lock_profit_level_pct")
+                    self.positions[symbol]["partial_take_profit_pct"] = params.get("partial_take_profit_pct")
+                    self.positions[symbol]["partial_take_profit_fraction"] = params.get("partial_take_profit_fraction")
+                    self.positions[symbol]["partial_tp_triggered"] = False
                     self.positions[symbol]["cooldown_after_loss_seconds"] = params["cooldown_after_loss_seconds"]
                     self.positions[symbol]["timeframe"] = timeframe
                     self.positions[symbol]["indicator_config"] = signal.indicator_config
@@ -1900,6 +1998,9 @@ class TradingEngine:
                         "breakeven_activation_pct": params.get("breakeven_activation_pct"),
                         "lock_profit_activation_pct": params.get("lock_profit_activation_pct"),
                         "lock_profit_level_pct": params.get("lock_profit_level_pct"),
+                        "partial_take_profit_pct": params.get("partial_take_profit_pct"),
+                        "partial_take_profit_fraction": params.get("partial_take_profit_fraction"),
+                        "partial_tp_triggered": False,
                         "cooldown_after_loss_seconds": params["cooldown_after_loss_seconds"],
                         "timeframe": timeframe,
                         "indicator_config": signal.indicator_config,
