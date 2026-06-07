@@ -975,13 +975,6 @@ class TradingEngine:
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
 
-        # Cooldown after a recent loss on this symbol
-        cooldown = settings.COOLDOWN_AFTER_LOSS_SECONDS
-        last_loss = self.last_loss_time.get(symbol, 0)
-        if cooldown > 0 and time.time() - last_loss < cooldown:
-            logger.info(f"Skipping {symbol}: cooldown after recent loss ({cooldown}s)")
-            return
-
         try:
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
             order_book = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
