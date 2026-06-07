@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from typing import Dict, List, Optional, Any
@@ -735,6 +736,36 @@ class TradingEngine:
         sample_pairs = available_pairs[:50]
         tickers = await asyncio.to_thread(get_tickers, self.exchange, sample_pairs)
 
+        # --- Compute scalping suitability scores for candidate coins ---
+        coin_scores: Dict[str, float] = {}
+        for sym in sample_pairs:
+            try:
+                t = tickers.get(sym, {})
+                last = t.get('last', 0) or 0
+                volume = t.get('quoteVolume', 0) or 0
+                change_24h = abs(t.get('percentage', 0) or 0)  # absolute % change
+
+                # Normalize volume (log scale to avoid one giant dominating)
+                vol_score = min(1.0, math.log10(volume + 1) / 10.0) if volume > 0 else 0.0
+
+                # Volatility proxy: use 24h change % (capped at 20%)
+                vola_score = min(1.0, change_24h / 20.0)
+
+                # Spread: fetch from order book (we'll approximate with a quick call, but to avoid extra API calls,
+                # we can use a default or compute later; for now use a placeholder or skip)
+                # We'll compute spread later in _process_coin, but for coin selection we can use a rough estimate.
+                # For simplicity, we'll set spread_score = 0.5 (neutral) and let the LLM use the detailed spread later.
+                spread_score = 0.5
+
+                # Momentum: use 24h change direction (positive = 1, negative = 0.5)
+                momentum_score = 1.0 if (t.get('percentage', 0) or 0) > 0 else 0.5
+
+                # Composite score (weights can be adjusted)
+                score = (0.3 * vol_score + 0.3 * vola_score + 0.2 * spread_score + 0.2 * momentum_score)
+                coin_scores[sym] = round(score, 3)
+            except Exception:
+                coin_scores[sym] = 0.0
+
         # Fetch news sentiment for all candidate coins
         news_sentiment = {}
         if settings.NEWS_ENABLED:
@@ -891,6 +922,7 @@ class TradingEngine:
             news_sentiment=news_sentiment,
             coin_indicators=coin_indicators,
             daily_pnl=perf["equity_curve"].get("daily_pnl"),
+            coin_scores=coin_scores,
         )
         try:
             response = await asyncio.wait_for(
