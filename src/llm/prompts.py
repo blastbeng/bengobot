@@ -574,6 +574,7 @@ def build_strategy_prompt(
     min_order_amount: Optional[float] = None,
     min_order_cost: Optional[float] = None,
     all_coins: Optional[List[Dict[str, str]]] = None,
+    past_trades: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -700,6 +701,25 @@ Maximum coins to trade: {max_coins}
     if recent_trades:
         prompt += f"\nRecent closed trades (last {len(recent_trades)}):\n{json.dumps(recent_trades)}\n"
         prompt += "Use these outcomes to adapt your strategy. If recent trades are losing, become more conservative.\n"
+
+    # --- Past trades for this specific coin ---
+    if past_trades:
+        prompt += f"\nPast closed trades for {symbol} (last {len(past_trades)}):\n"
+        for t in past_trades:
+            entry_price = t.get("price", 0.0)
+            exit_price = t.get("exit_price", 0.0)
+            amount = t.get("amount", 0.0)
+            pnl = t.get("realized_pnl", 0.0)
+            exit_reason = t.get("exit_reason", "unknown")
+            hold_time = t.get("hold_time_seconds", None)
+            strategy = t.get("strategy_type", "unknown")
+            hold_str = f"{hold_time:.0f}s" if hold_time is not None else "N/A"
+            prompt += (
+                f"- Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Amount: {amount:.6f}, "
+                f"P&L: {pnl:+.4f}, Reason: {exit_reason}, "
+                f"Hold: {hold_str}, Strategy: {strategy}\n"
+            )
+        prompt += "Use these past outcomes to avoid repeating mistakes and to reinforce successful patterns.\n"
 
     # --- News section ---
     news_section = ""

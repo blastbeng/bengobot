@@ -1213,6 +1213,12 @@ class TradingEngine:
             min_order_amount = float(min_amount_raw) if min_amount_raw is not None else None
             min_order_cost = float(min_cost_raw) if min_cost_raw is not None else None
 
+            # Past trades for this specific coin (last 10 closed sells)
+            past_trades = [
+                t for t in self.trade_history
+                if t.get("symbol") == symbol and t.get("side") == "sell"
+            ][-10:]
+
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
@@ -1261,6 +1267,7 @@ class TradingEngine:
                 min_order_amount=min_order_amount,
                 min_order_cost=min_order_cost,
                 all_coins=self.current_coins,
+                past_trades=past_trades,
             )
             response = await asyncio.to_thread(get_cached_llm_response, prompt, SYSTEM_PROMPT, 60)
             strategy = create_strategy_from_llm(response)
@@ -1908,6 +1915,7 @@ class TradingEngine:
                 order["timeframe"] = tf
                 order["strategy_type"] = signal.strategy_type
                 order["exit_reason"] = exit_reason
+                order["exit_price"] = order["price"]
                 if pos and "timestamp" in pos:
                     hold_time = (order["timestamp"] - pos["timestamp"]) / 1000.0
                     order["hold_time_seconds"] = hold_time
