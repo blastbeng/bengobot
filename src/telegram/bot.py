@@ -15,6 +15,15 @@ class TelegramBot:
     def __init__(self, engine: TradingEngine):
         self.engine = engine
         self.redis = get_redis_client()
+        # Allowed chat ID – bot will only respond to this chat
+        self.allowed_chat_id = None
+        if settings.TELEGRAM_CHAT_ID:
+            try:
+                self.allowed_chat_id = int(settings.TELEGRAM_CHAT_ID)
+            except ValueError:
+                logger.error("TELEGRAM_CHAT_ID must be a valid integer")
+        else:
+            logger.warning("TELEGRAM_CHAT_ID not set. Bot will not respond to any chat.")
         self.app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
         self._register_handlers()
         self.keyboard = ReplyKeyboardMarkup(
@@ -27,6 +36,12 @@ class TelegramBot:
             ],
             resize_keyboard=True,
         )
+
+    def _is_authorized(self, update: Update) -> bool:
+        """Return True if the update comes from the allowed chat ID."""
+        if self.allowed_chat_id is None:
+            return False
+        return update.effective_chat.id == self.allowed_chat_id
 
     def _register_handlers(self):
         self.app.add_handler(CommandHandler("start", self.cmd_start))
@@ -45,6 +60,8 @@ class TelegramBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_button))
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         chat_id = update.effective_chat.id
         await asyncio.to_thread(set_telegram_chat_id, chat_id)
         await update.message.reply_text(
@@ -53,9 +70,13 @@ class TelegramBot:
         )
 
     async def cmd_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         await update.message.reply_text("Choose an option:", reply_markup=self.keyboard)
 
     async def handle_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         text = update.message.text
         logger.debug(f"Received button text: {text}")
         if text == "📊 Status":
@@ -86,14 +107,20 @@ class TelegramBot:
             )
 
     async def cmd_pause(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         await asyncio.to_thread(self.redis.set, "trading:paused", "1")
         await update.message.reply_text("Trading paused.", reply_markup=self.keyboard)
 
     async def cmd_resume(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         await asyncio.to_thread(self.redis.delete, "trading:paused")
         await update.message.reply_text("Trading resumed.", reply_markup=self.keyboard)
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         try:
             def get_status():
                 coins = self.engine.current_coins
@@ -137,6 +164,8 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         try:
             open_trades = await asyncio.to_thread(self.engine.get_open_trades)
         except Exception as e:
@@ -187,6 +216,8 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_performance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Show performance summary grouped by coin and timeframe."""
         # Check if there are any closed sell trades at all
         closed_sells = [t for t in self.engine.trade_history if t.get("side") == "sell"]
@@ -241,6 +272,8 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_news_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Show recent news for a specific coin (e.g., /news BTC)."""
         if not context.args:
             await update.message.reply_text(
@@ -265,6 +298,8 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode=None, reply_markup=self.keyboard)
 
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         try:
             metrics = self.engine.get_risk_metrics()
         except Exception as e:
@@ -295,6 +330,8 @@ class TelegramBot:
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_news(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Show recent news for all currently tracked coins."""
         try:
             coins = self.engine.current_coins
@@ -326,6 +363,8 @@ class TelegramBot:
             await update.message.reply_text("⚠️ Could not retrieve news.", reply_markup=self.keyboard)
 
     async def cmd_news_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Show news article counts for tracked coins."""
         try:
             coins = self.engine.current_coins
@@ -345,6 +384,8 @@ class TelegramBot:
             await update.message.reply_text("⚠️ Could not retrieve news status.", reply_markup=self.keyboard)
 
     async def cmd_reload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Hot-reload the .env file."""
         try:
             settings.reload()
@@ -354,6 +395,8 @@ class TelegramBot:
             await update.message.reply_text(f"⚠️ Failed to reload settings: {e}", reply_markup=self.keyboard)
 
     async def cmd_sell(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         """Sell all open positions, or a specific one by trade ID (e.g., /sell 2)."""
         try:
             open_trades = await asyncio.to_thread(self.engine.get_open_trades)
@@ -390,6 +433,8 @@ class TelegramBot:
             await update.message.reply_text(f"✅ Sell orders placed for all {count} positions.", reply_markup=self.keyboard)
 
     async def cmd_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
         try:
             summary = await asyncio.to_thread(self.engine.get_profit_summary)
             pnl = summary['total_pnl']
