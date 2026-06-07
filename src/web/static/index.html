@@ -304,8 +304,9 @@
                 <h2>Positions</h2>
                 <div class="table-wrapper">
                     <table id="positions-table">
-                        <thead><tr><th>Symbol</th><th>Amount</th><th>Entry Price</th><th>Current Price</th><th>Unrealized P&L</th><th>Stop Loss</th><th>Take Profit</th><th>Trailing</th></tr></thead>
+                        <thead><tr><th>Symbol</th><th>Amount</th><th>Entry Price</th><th>Current Price</th><th>Unrealized P&L</th><th>P&L %</th><th>Stop Loss</th><th>Take Profit</th><th>Trailing</th></tr></thead>
                         <tbody></tbody>
+                        <tfoot></tfoot>
                     </table>
                 </div>
             </div>
@@ -434,15 +435,15 @@
                             existing.entry = entry;
                         }
                         if (existing.stopLoss !== stopLoss) {
-                            row.cells[5].textContent = stopLoss?.toFixed(4) || '';
+                            row.cells[6].textContent = stopLoss?.toFixed(4) || '';
                             existing.stopLoss = stopLoss;
                         }
                         if (existing.takeProfit !== takeProfit) {
-                            row.cells[6].textContent = takeProfit?.toFixed(4) || '';
+                            row.cells[7].textContent = takeProfit?.toFixed(4) || '';
                             existing.takeProfit = takeProfit;
                         }
                         if (existing.trailing !== trailing) {
-                            row.cells[7].textContent = trailing;
+                            row.cells[8].textContent = trailing;
                             existing.trailing = trailing;
                         }
                     } else {
@@ -456,6 +457,7 @@
                         row.insertCell().textContent = entry.toFixed(4);
                         row.insertCell().textContent = '...'; // Current Price placeholder
                         row.insertCell().textContent = '...'; // Unrealized P&L placeholder
+                        row.insertCell().textContent = '...'; // P&L % placeholder
                         row.insertCell().textContent = stopLoss?.toFixed(4) || '';
                         row.insertCell().textContent = takeProfit?.toFixed(4) || '';
                         row.insertCell().textContent = trailing;
@@ -479,6 +481,8 @@
                     positionsMap[sym].row.remove();
                     delete positionsMap[sym];
                 }
+                const tfoot = document.querySelector('#positions-table tfoot');
+                if (tfoot) tfoot.innerHTML = '';
             }
 
             // Balances
@@ -666,21 +670,49 @@
                     .catch(() => ({ sym, ticker: null }))
             );
             const results = await Promise.all(promises);
+            let totalUnrealizedPnl = 0;
+            let totalValue = 0;
             for (const { sym, ticker } of results) {
                 const entry = positionsMap[sym];
                 if (!entry) continue;
                 const row = entry.row;
                 const curPriceCell = row.cells[3];
                 const unrealPnlCell = row.cells[4];
+                const pnlPctCell = row.cells[5];
                 if (ticker && ticker.last !== undefined && ticker.last !== null) {
                     const curPrice = ticker.last;
                     curPriceCell.textContent = curPrice.toFixed(4);
                     const unrealPnl = (curPrice - entry.entry) * entry.amount;
                     unrealPnlCell.textContent = unrealPnl.toFixed(4);
                     unrealPnlCell.className = unrealPnl >= 0 ? 'green' : 'red';
+                    const pnlPct = entry.entry !== 0 ? ((curPrice - entry.entry) / entry.entry * 100) : 0;
+                    pnlPctCell.textContent = pnlPct.toFixed(2) + '%';
+                    pnlPctCell.className = pnlPct >= 0 ? 'green' : 'red';
+                    totalUnrealizedPnl += unrealPnl;
+                    totalValue += curPrice * entry.amount;
                 } else {
                     curPriceCell.textContent = 'N/A';
                     unrealPnlCell.textContent = 'N/A';
+                    pnlPctCell.textContent = 'N/A';
+                }
+            }
+            // Update total row in tfoot
+            const tfoot = document.querySelector('#positions-table tfoot');
+            if (tfoot) {
+                if (symbols.length > 0) {
+                    tfoot.innerHTML = `<tr>
+                        <td><strong>Total</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td class="${totalUnrealizedPnl >= 0 ? 'green' : 'red'}"><strong>${totalUnrealizedPnl.toFixed(4)}</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                    </tr>`;
+                } else {
+                    tfoot.innerHTML = '';
                 }
             }
         }
