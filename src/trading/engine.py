@@ -1626,6 +1626,17 @@ class TradingEngine:
                             pos["stop_loss"] = breakeven_price
                             logger.debug(f"Breakeven stop activated for {symbol}: new stop {breakeven_price:.4f}")
 
+                # --- Lock profit (scalping) ---
+                lock_activation = pos.get("lock_profit_activation_pct")
+                lock_level = pos.get("lock_profit_level_pct")
+                if lock_activation is not None and lock_level is not None and lock_activation > 0:
+                    entry_price = pos["price"]
+                    if current_price >= entry_price * (1 + lock_activation):
+                        new_stop = entry_price * (1 + lock_level)
+                        if new_stop > pos["stop_loss"]:
+                            pos["stop_loss"] = new_stop
+                            logger.debug(f"Lock-profit activated for {symbol}: new stop {new_stop:.4f} (guaranteed +{lock_level:.2%})")
+
                 # Time‑based exit (LLM‑defined max hold time)
                 max_hold = pos.get("max_hold_time_seconds")
                 if max_hold is not None and max_hold > 0:
@@ -1811,6 +1822,8 @@ class TradingEngine:
                     self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
                     self.positions[symbol]["trailing_stop_activation_pct"] = params.get("trailing_stop_activation_pct")
                     self.positions[symbol]["breakeven_activation_pct"] = params.get("breakeven_activation_pct")
+                    self.positions[symbol]["lock_profit_activation_pct"] = params.get("lock_profit_activation_pct")
+                    self.positions[symbol]["lock_profit_level_pct"] = params.get("lock_profit_level_pct")
                     self.positions[symbol]["cooldown_after_loss_seconds"] = params["cooldown_after_loss_seconds"]
                     self.positions[symbol]["timeframe"] = timeframe
                     self.positions[symbol]["indicator_config"] = signal.indicator_config
@@ -1831,6 +1844,8 @@ class TradingEngine:
                         "max_hold_time_seconds": params.get("max_hold_time_seconds"),
                         "trailing_stop_activation_pct": params.get("trailing_stop_activation_pct"),
                         "breakeven_activation_pct": params.get("breakeven_activation_pct"),
+                        "lock_profit_activation_pct": params.get("lock_profit_activation_pct"),
+                        "lock_profit_level_pct": params.get("lock_profit_level_pct"),
                         "cooldown_after_loss_seconds": params["cooldown_after_loss_seconds"],
                         "timeframe": timeframe,
                         "indicator_config": signal.indicator_config,

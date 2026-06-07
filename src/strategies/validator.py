@@ -122,6 +122,15 @@ def validate_signal(
             bap = params["breakeven_activation_pct"]
             if not isinstance(bap, (int, float)) or not (0 < bap <= 1.0):
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid breakeven_activation_pct")
+        if "lock_profit_activation_pct" in params:
+            lpa = params["lock_profit_activation_pct"]
+            if not isinstance(lpa, (int, float)) or not (0 < lpa <= 1.0):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid lock_profit_activation_pct")
+            if "lock_profit_level_pct" not in params:
+                return Signal(action="HOLD", confidence=0.0, reasoning="Missing lock_profit_level_pct")
+            lpl = params["lock_profit_level_pct"]
+            if not isinstance(lpl, (int, float)) or not (0 < lpl < lpa):
+                return Signal(action="HOLD", confidence=0.0, reasoning="Invalid lock_profit_level_pct (must be < activation)")
         if "max_risk_per_trade_pct" in params:
             mrp = params["max_risk_per_trade_pct"]
             if not isinstance(mrp, (int, float)) or not (0 < mrp <= 1.0):
