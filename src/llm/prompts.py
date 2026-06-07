@@ -307,6 +307,7 @@ Example: If ATR=50 and current price=5000, a 2× ATR stop distance is 100, so st
 - After a losing trade on a coin, avoid that coin for at least several evaluation cycles. Learn from recent trade outcomes shown in the prompt.
 - Learn from historical performance: avoid coins and strategies with poor win rates or negative average P&L.
 - **Learn from past trade outcomes for each coin.** The prompt will include a list of recent closed trades for the current coin. Use this to avoid repeating mistakes and to reinforce successful patterns. If a coin has a string of losses, be more cautious or avoid it.
+- You must set a cooldown duration for every BUY. After a losing trade on a coin, the bot will skip that coin for the duration you specify.
 
 You will receive recent news headlines with sentiment scores for each coin. Use this information to gauge market sentiment and potential catalysts.
 - Strong positive sentiment may justify higher confidence, larger position sizes, and longer max hold times.
