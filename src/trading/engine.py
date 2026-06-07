@@ -975,6 +975,21 @@ class TradingEngine:
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
 
+        # --- Cooldown after a losing trade ---
+        last_loss = self.last_loss_time.get(symbol)
+        if last_loss is not None:
+            elapsed = time.time() - last_loss
+            if elapsed < settings.COOLDOWN_AFTER_LOSS_SECONDS:
+                remaining = settings.COOLDOWN_AFTER_LOSS_SECONDS - elapsed
+                logger.info(
+                    f"Skipping {symbol}: cooldown active ({remaining:.0f}s remaining after loss)"
+                )
+                if self.notifier:
+                    await self.notifier.send_notification(
+                        f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s"
+                    )
+                return
+
         try:
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
             order_book = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
