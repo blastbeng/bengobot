@@ -125,6 +125,10 @@ def validate_signal(
                     return Signal(action="HOLD", confidence=0.0, reasoning=f"Invalid take_profit_pct in level {i}")
                 if not isinstance(lvl_frac, (int, float)) or not (0 < lvl_frac <= 1.0):
                     return Signal(action="HOLD", confidence=0.0, reasoning=f"Invalid fraction in level {i}")
+                min_depth = level.get("min_depth")
+                if min_depth is not None:
+                    if not isinstance(min_depth, (int, float)) or min_depth <= 0:
+                        return Signal(action="HOLD", confidence=0.0, reasoning=f"Invalid min_depth in level {i}")
                 if lvl_pct <= prev_pct:
                     return Signal(action="HOLD", confidence=0.0, reasoning=f"Levels must be in increasing take_profit_pct order")
                 if lvl_pct >= tp:
