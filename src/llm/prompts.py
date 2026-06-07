@@ -672,7 +672,7 @@ Maximum coins to trade: {max_coins}
             "Use the ATR to set your stop-loss distance. Convert the chosen distance into a percentage "
             "of the current price for the stop_loss_pct parameter. You decide the appropriate multiplier "
             "based on current volatility and your risk assessment.\n"
-            "The bot requires the stop distance to be at least 0.5× ATR. Ensure your stop_loss_pct (or atr_multiple) meets this minimum.\n"
+            "You may set any stop distance you believe is appropriate. Use the ATR to inform your decision, but there is no enforced minimum.\n"
             "The bot will skip this coin if its ATR% (ATR/price) is below the minimum threshold (0.5%). "
             "If you are seeing this prompt, the coin passed the filter.\n"
         )
