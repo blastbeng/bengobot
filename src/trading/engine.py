@@ -206,6 +206,37 @@ class TradingEngine:
             logger.warning(f"Failed to fetch global market data: {e}")
         return None
 
+    async def _fetch_altcoin_season_index(self) -> Optional[Dict[str, Any]]:
+        """Fetch Altcoin Season Index from blockchaincenter.net, cached in Redis."""
+        if not getattr(settings, 'ALTCOIN_SEASON_ENABLED', True):
+            return None
+        cache_key = "altcoin_season:index"
+        try:
+            cached = await asyncio.to_thread(self.redis.get, cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.blockchaincenter.net/altcoin-season-index",
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    result = {
+                        "value": int(data.get("value", 50)),
+                        "description": data.get("description", ""),
+                    }
+                    ttl = getattr(settings, 'ALTCOIN_SEASON_CACHE_TTL_SECONDS', 3600)
+                    await asyncio.to_thread(self.redis.setex, cache_key, ttl, json.dumps(result))
+                    return result
+        except Exception as e:
+            logger.warning(f"Failed to fetch Altcoin Season Index: {e}")
+        return None
+
     def _get_news_summary(self, symbol: str) -> str:
         """Return a very short summary of the latest news article for the symbol."""
         if not settings.NEWS_ENABLED:
