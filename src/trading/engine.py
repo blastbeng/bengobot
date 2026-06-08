@@ -2624,7 +2624,14 @@ class TradingEngine:
                     logger.info(f"Take-profit triggered for {symbol} at {current_price}")
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"✅ Take‑profit triggered for {symbol} at {current_price:.4f}"
+                            f"✅ Take‑profit triggered for {symbol} at {current_price:.4f}",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SELL",
+                                "reason": "Take-profit",
+                                "price": current_price,
+                                "exit_reason": "take_profit",
+                            }
                         )
                     await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Take-profit"), exit_reason="take_profit")
             except Exception as e:
