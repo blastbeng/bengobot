@@ -84,6 +84,14 @@ def validate_signal(
             tsa = params["trailing_stop_activation_pct"]
             if not isinstance(tsa, (int, float)) or not (0 <= tsa <= 1.0):
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid trailing_stop_activation_pct")
+        if "trailing_take_profit" in params:
+            ttp = params["trailing_take_profit"]
+            if not isinstance(ttp, bool):
+                return Signal(action="HOLD", confidence=0.0, reasoning="trailing_take_profit must be boolean")
+            if ttp:
+                ttp_dist = params.get("trailing_take_profit_distance_pct")
+                if ttp_dist is None or not isinstance(ttp_dist, (int, float)) or not (0 < ttp_dist < 1.0):
+                    return Signal(action="HOLD", confidence=0.0, reasoning="Invalid or missing trailing_take_profit_distance_pct")
         if "breakeven_activation_pct" in params:
             bap = params["breakeven_activation_pct"]
             if not isinstance(bap, (int, float)) or not (0 < bap <= 1.0):

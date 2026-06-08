@@ -358,6 +358,10 @@ class TradingEngine:
                     pos["max_hold_time_seconds"] = old["max_hold_time_seconds"]
                 if "trailing_stop_activation_pct" in old:
                     pos["trailing_stop_activation_pct"] = old["trailing_stop_activation_pct"]
+                if "trailing_take_profit" in old:
+                    pos["trailing_take_profit"] = old["trailing_take_profit"]
+                if "trailing_take_profit_distance_pct" in old:
+                    pos["trailing_take_profit_distance_pct"] = old["trailing_take_profit_distance_pct"]
                 if "breakeven_activation_pct" in old:
                     pos["breakeven_activation_pct"] = old["breakeven_activation_pct"]
                 if "lock_profit_activation_pct" in old:
@@ -1895,6 +1899,14 @@ class TradingEngine:
                             pos["stop_loss"] = new_stop
                             logger.debug(f"Trailing stop updated for {symbol}: new stop {new_stop:.4f}")
 
+                # --- Trailing take-profit ---
+                if pos.get("trailing_take_profit") and pos.get("trailing_take_profit_distance_pct"):
+                    ttp_dist = pos["trailing_take_profit_distance_pct"]
+                    new_tp = current_price * (1 + ttp_dist)
+                    if new_tp > pos["take_profit"]:
+                        pos["take_profit"] = new_tp
+                        logger.debug(f"Trailing take-profit updated for {symbol}: new TP {new_tp:.4f}")
+
                 # --- Breakeven stop ---
                 breakeven_activation = pos.get("breakeven_activation_pct")
                 if breakeven_activation is not None and breakeven_activation > 0:
@@ -2327,6 +2339,8 @@ class TradingEngine:
                     self.positions[symbol]["trailing_stop_distance_pct"] = trailing_stop_distance_pct
                     self.positions[symbol]["max_hold_time_seconds"] = params.get("max_hold_time_seconds")
                     self.positions[symbol]["trailing_stop_activation_pct"] = params.get("trailing_stop_activation_pct")
+                    self.positions[symbol]["trailing_take_profit"] = params.get("trailing_take_profit", False)
+                    self.positions[symbol]["trailing_take_profit_distance_pct"] = params.get("trailing_take_profit_distance_pct")
                     self.positions[symbol]["breakeven_activation_pct"] = params.get("breakeven_activation_pct")
                     self.positions[symbol]["lock_profit_activation_pct"] = params.get("lock_profit_activation_pct")
                     self.positions[symbol]["lock_profit_level_pct"] = params.get("lock_profit_level_pct")
@@ -2366,6 +2380,8 @@ class TradingEngine:
                         "trailing_stop_distance_pct": trailing_stop_distance_pct,
                         "max_hold_time_seconds": params.get("max_hold_time_seconds"),
                         "trailing_stop_activation_pct": params.get("trailing_stop_activation_pct"),
+                        "trailing_take_profit": params.get("trailing_take_profit", False),
+                        "trailing_take_profit_distance_pct": params.get("trailing_take_profit_distance_pct"),
                         "breakeven_activation_pct": params.get("breakeven_activation_pct"),
                         "lock_profit_activation_pct": params.get("lock_profit_activation_pct"),
                         "lock_profit_level_pct": params.get("lock_profit_level_pct"),
