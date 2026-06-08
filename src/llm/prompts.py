@@ -458,6 +458,7 @@ def build_coin_selection_prompt(
     relative_strength_btc: Optional[Dict[str, Dict[str, Any]]] = None,
     session_info: Optional[Dict[str, Any]] = None,
     sentiment_trend: Optional[Dict[str, Optional[float]]] = None,
+    volume_trends: Optional[Dict[str, Optional[float]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -662,6 +663,18 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
             "Use this to gauge whether the narrative is strengthening or weakening. "
             "Improving sentiment may justify higher confidence; deteriorating sentiment may warrant caution.\n"
         )
+    if volume_trends:
+        prompt += "\nVolume trend (24h volume relative to recent average):\n"
+        for sym in available_pairs[:50]:
+            if sym in volume_trends and volume_trends[sym] is not None:
+                prompt += f"  {sym}: {volume_trends[sym]:.2f}x\n"
+        prompt += (
+            "A ratio > 1.0 means current 24h volume is above the recent average; "
+            "> 2.0 suggests a significant spike that often precedes large moves. "
+            "Use this to identify coins with unusual activity. "
+            "Prefer coins with elevated volume when looking for breakout or momentum trades; "
+            "be cautious with low-volume coins as moves may lack conviction.\n"
+        )
     if news_section:
         prompt += f"\n{news_section}\n"
     prompt += (
@@ -756,6 +769,7 @@ def build_strategy_prompt(
     vwap_multi_tf: Optional[Dict[str, float]] = None,
     session_info: Optional[Dict[str, Any]] = None,
     sentiment_trend: Optional[float] = None,
+    volume_trend: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -1069,6 +1083,14 @@ Maximum coins to trade: {max_coins}
             "A positive delta means sentiment is improving; a negative delta means it is deteriorating. "
             "Use this to adjust your confidence and risk parameters: improving sentiment may justify a larger position, "
             "while deteriorating sentiment may warrant a smaller position or tighter stops.\n"
+        )
+    if volume_trend is not None:
+        prompt += f"\nVolume trend: {volume_trend:.2f}x (current 24h volume relative to recent average)\n"
+        prompt += (
+            "A ratio > 1.0 means volume is above average; > 2.0 suggests a significant spike. "
+            "Elevated volume confirms the strength of a price move and increases the reliability of technical signals. "
+            "Low volume during a breakout may signal a fakeout – reduce position size or wait for confirmation. "
+            "Use this to adjust your confidence and position size accordingly.\n"
         )
 
     # --- News section (detailed articles) ---

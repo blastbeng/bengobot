@@ -183,6 +183,35 @@ class TradingEngine:
             pass
         return ""
 
+    async def _compute_volume_trend(self, symbol: str, current_volume: float) -> Optional[float]:
+        """Compute volume trend as ratio of current 24h volume to EMA of past volumes.
+
+        Returns the ratio (e.g., 2.0 means current volume is 2× the average).
+        Returns None if volume data is unavailable.
+        """
+        if current_volume <= 0:
+            return None
+
+        redis_key = f"volume_trend:ema:{symbol}"
+        alpha = 0.3  # EMA smoothing factor
+
+        try:
+            stored = await asyncio.to_thread(self.redis.get, redis_key)
+            if stored is not None:
+                old_avg = float(stored)
+                new_avg = alpha * current_volume + (1 - alpha) * old_avg
+                ratio = current_volume / old_avg if old_avg > 0 else 1.0
+                # Store the updated average with 7-day TTL
+                await asyncio.to_thread(self.redis.setex, redis_key, 7 * 24 * 3600, str(new_avg))
+                return round(ratio, 3)
+            else:
+                # First observation: initialize with current volume, ratio = 1.0
+                await asyncio.to_thread(self.redis.setex, redis_key, 7 * 24 * 3600, str(current_volume))
+                return 1.0
+        except Exception as e:
+            logger.debug(f"Volume trend computation failed for {symbol}: {e}")
+            return None
+
     async def _fetch_and_store_news_for_symbol(self, symbol: str):
         """Fetch news for a single symbol and store it in the database."""
         if not settings.NEWS_ENABLED:
@@ -1032,6 +1061,14 @@ class TradingEngine:
             else:
                 sentiment_trend[base_coin] = None
 
+        # Volume trend (24h volume spike detection)
+        volume_trends: Dict[str, Optional[float]] = {}
+        for sym in sample_pairs:
+            t = tickers.get(sym, {})
+            vol = t.get('quoteVolume', 0) or 0
+            if vol > 0:
+                volume_trends[sym] = await self._compute_volume_trend(sym, vol)
+
         # Overall market trend (use BTC/USDT as benchmark)
         market_trend = None
         btc_symbol = "BTC/USDT"
@@ -1301,6 +1338,7 @@ class TradingEngine:
             relative_strength_btc=relative_strength_btc,
             session_info=session_info,
             sentiment_trend=sentiment_trend,
+            volume_trends=volume_trends,
         )
         try:
             response = await asyncio.wait_for(
@@ -1872,6 +1910,12 @@ class TradingEngine:
                 if current_compound is not None and prev_compound is not None:
                     sentiment_trend_val = round(current_compound - prev_compound, 4)
 
+            # Volume trend (24h volume spike detection)
+            volume_trend_val = None
+            current_volume = ticker.get('quoteVolume', 0) or 0
+            if current_volume > 0:
+                volume_trend_val = await self._compute_volume_trend(symbol, current_volume)
+
             remaining = max(0.0, base_balance - self._cycle_spent)
             fear_greed = await self._get_fear_greed_index()
             # Current trading session
@@ -1950,6 +1994,7 @@ class TradingEngine:
                 vwap_multi_tf=vwap_multi_tf,
                 session_info=session_info,
                 sentiment_trend=sentiment_trend_val,
+                volume_trend=volume_trend_val,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:
