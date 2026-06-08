@@ -680,7 +680,13 @@ class TradingEngine:
                 logger.info(f"Forcing close of {symbol} because it lacks LLM risk parameters.")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"🔻 Closing {symbol} – missing LLM risk parameters."
+                        f"🔻 Closing {symbol} – missing LLM risk parameters.",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SELL",
+                            "reason": "Missing LLM risk parameters",
+                            "exit_reason": "force_close",
+                        }
                     )
                 signal = Signal(action="SELL", confidence=1.0, reasoning="Missing LLM risk parameters")
                 await self._execute_signal(symbol, signal, exit_reason="force_close")
@@ -1117,7 +1123,13 @@ class TradingEngine:
             if self.notifier:
                 await self.notifier.send_notification(
                     f"⚠️ Insufficient {self.base_currency} balance ({base_balance:.2f}) to trade any coin. "
-                    f"Min cost required: {min_min_cost:.2f}. Depositing funds or resetting paper balance will fix this."
+                    f"Min cost required: {min_min_cost:.2f}. Depositing funds or resetting paper balance will fix this.",
+                    summary={
+                        "action": "HOLD",
+                        "reason": "Insufficient balance",
+                        "base_balance": base_balance,
+                        "min_cost": min_min_cost,
+                    }
                 )
             return
 
@@ -1287,11 +1299,22 @@ class TradingEngine:
                 await self.notifier.send_notification(
                     f"⚠️ No coins selected. Bot will idle. "
                     f"Balance: {base_balance:.2f} {self.base_currency}, "
-                    f"Per-coin budget: {per_coin_budget:.2f}"
+                    f"Per-coin budget: {per_coin_budget:.2f}",
+                    summary={
+                        "action": "HOLD",
+                        "reason": "No coins selected",
+                        "base_balance": base_balance,
+                        "per_coin_budget": per_coin_budget,
+                    }
                 )
         elif self.notifier:
             await self.notifier.send_notification(
-                f"🔄 Coins updated: {', '.join(coin_labels)}"
+                f"🔄 Coins updated: {', '.join(coin_labels)}",
+                summary={
+                    "action": "INFO",
+                    "reason": "Coins updated",
+                    "coins": [c["symbol"] for c in self.current_coins],
+                }
             )
 
         await asyncio.to_thread(self.redis.set, last_key, now)
@@ -1314,7 +1337,13 @@ class TradingEngine:
                     )
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s"
+                            f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SKIP",
+                                "reason": "Cooldown active",
+                                "cooldown_remaining_seconds": remaining,
+                            }
                         )
                     return
 
@@ -1726,7 +1755,14 @@ class TradingEngine:
             except asyncio.TimeoutError:
                 logger.warning(f"LLM strategy call timed out for {symbol}. Skipping this cycle.")
                 if self.notifier:
-                    await self.notifier.send_notification(f"⏱️ LLM timeout for {symbol}, skipping.")
+                    await self.notifier.send_notification(
+                        f"⏱️ LLM timeout for {symbol}, skipping.",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "LLM timeout",
+                        }
+                    )
                 return
             strategy = create_strategy_from_llm(response)
             signal = strategy.generate_signal({})
@@ -1784,7 +1820,34 @@ class TradingEngine:
                     msg += f"\n📈 Backtest: {validated.backtest_summary}"
                 if indicator_str:
                     msg += f"\n📊 {indicator_str}"
-                await self.notifier.send_notification(msg)
+                # Build summary dict for logging
+                decision_summary = {
+                    "symbol": symbol,
+                    "action": validated.action,
+                    "confidence": validated.confidence,
+                    "reason": validated.reasoning[:200],
+                    "sentiment": aggregate_sentiment,
+                    "indicators": {
+                        "rsi": rsi,
+                        "macd": macd,
+                        "macd_signal": macd_signal,
+                        "atr": atr,
+                        "adx": adx,
+                        "bb_upper": bb_upper,
+                        "bb_lower": bb_lower,
+                        "ema_9": ema_9,
+                        "ema_21": ema_21,
+                        "stochastic_k": stochastic_k,
+                        "mfi": mfi,
+                        "cci": cci,
+                        "williams_r": williams_r,
+                    },
+                    "backtest": getattr(validated, 'backtest_summary', None),
+                    "strategy_type": signal.strategy_type,
+                    "market_regime": market_regime,
+                    "scalping_score": scalping_score,
+                }
+                await self.notifier.send_notification(msg, summary=decision_summary)
 
             # --- LLM‑controlled trade filters ---
             params = signal.strategy_params or {}
@@ -1804,7 +1867,14 @@ class TradingEngine:
                 logger.info(f"Skipping {symbol}: spread {spread_pct:.4f}% exceeds LLM max {max_spread:.4f}%")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"⚠️ Skipping {symbol}: spread too high ({spread_pct:.4f}% > {max_spread:.4f}%)"
+                        f"⚠️ Skipping {symbol}: spread too high ({spread_pct:.4f}% > {max_spread:.4f}%)",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "Spread too high",
+                            "spread_pct": spread_pct,
+                            "max_spread_pct": max_spread,
+                        }
                     )
                 return
 
@@ -1813,7 +1883,14 @@ class TradingEngine:
                 logger.info(f"Skipping {symbol}: confidence {validated.confidence:.2f} below LLM min {min_conf:.2f}")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"⚠️ Skipping {symbol}: confidence too low ({validated.confidence:.2f})"
+                        f"⚠️ Skipping {symbol}: confidence too low ({validated.confidence:.2f})",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "Confidence too low",
+                            "confidence": validated.confidence,
+                            "min_confidence": min_conf,
+                        }
                     )
                 return
 
@@ -1837,7 +1914,14 @@ class TradingEngine:
                     )
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"⚠️ Skipping {symbol}: insufficient depth at take-profit ({cum_vol:.4f} < {min_depth_tp:.4f})"
+                            f"⚠️ Skipping {symbol}: insufficient depth at take-profit ({cum_vol:.4f} < {min_depth_tp:.4f})",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SKIP",
+                                "reason": "Insufficient depth at take-profit",
+                                "depth": cum_vol,
+                                "min_depth": min_depth_tp,
+                            }
                         )
                     return
 
@@ -1891,7 +1975,12 @@ class TradingEngine:
                         )
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"⚠️ Skipping BUY {symbol}: insufficient depth for order size"
+                                f"⚠️ Skipping BUY {symbol}: insufficient depth for order size",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SKIP",
+                                    "reason": "Insufficient order book depth for buy size",
+                                }
                             )
                         return
                     avg_price = total_cost / total_base if total_base > 0 else 0
@@ -1905,7 +1994,14 @@ class TradingEngine:
                             )
                             if self.notifier:
                                 await self.notifier.send_notification(
-                                    f"⚠️ Skipping BUY {symbol}: slippage too high ({slippage_pct:.4f}%)"
+                                    f"⚠️ Skipping BUY {symbol}: slippage too high ({slippage_pct:.4f}%)",
+                                    summary={
+                                        "symbol": symbol,
+                                        "action": "SKIP",
+                                        "reason": "Slippage too high",
+                                        "slippage_pct": slippage_pct,
+                                        "max_slippage_pct": max_slippage,
+                                    }
                                 )
                             return
 
@@ -1914,7 +2010,12 @@ class TradingEngine:
                 logger.info(f"LLM decided not to execute trade for {symbol}. Reason: {validated.reasoning}")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"⏭️ {symbol}: LLM skipped trade"
+                        f"⏭️ {symbol}: LLM skipped trade",
+                        summary={
+                            "symbol": symbol,
+                            "action": "HOLD",
+                            "reason": "LLM execute flag false",
+                        }
                     )
                 return
 
@@ -1923,7 +2024,12 @@ class TradingEngine:
                 logger.info(f"Skipping SELL for {symbol}: no open position.")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"⚠️ Skipping SELL for {symbol}: no open position."
+                        f"⚠️ Skipping SELL for {symbol}: no open position.",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "No open position",
+                        }
                     )
                 return
 
@@ -1932,7 +2038,14 @@ class TradingEngine:
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
             if self.notifier:
-                await self.notifier.send_notification(f"❌ Error processing {symbol}: {e}")
+                await self.notifier.send_notification(
+                    f"❌ Error processing {symbol}: {e}",
+                    summary={
+                        "symbol": symbol,
+                        "action": "ERROR",
+                        "reason": str(e)[:200],
+                    }
+                )
 
     def get_profit_summary(self) -> Dict[str, float]:
         """Return profit/loss summary."""
@@ -2252,7 +2365,15 @@ class TradingEngine:
                             )
                             if self.notifier:
                                 await self.notifier.send_notification(
-                                    f"🔸 Partial TP [{i}] {symbol}: selling {sell_amount:.6f} @ {current_price:.4f}"
+                                    f"🔸 Partial TP [{i}] {symbol}: selling {sell_amount:.6f} @ {current_price:.4f}",
+                                    summary={
+                                        "symbol": symbol,
+                                        "action": "SELL",
+                                        "reason": f"Partial take-profit level {i}",
+                                        "price": current_price,
+                                        "amount": sell_amount,
+                                        "exit_reason": f"partial_take_profit_level_{i}",
+                                    }
                                 )
                             try:
                                 order = await asyncio.to_thread(
@@ -2315,7 +2436,16 @@ class TradingEngine:
                                 pnl_pct = (realized_pnl / prorated_cost_basis * 100) if prorated_cost_basis > 0 else 0.0
                                 await self.notifier.send_notification(
                                     f"🔸 Partial TP [{i}] {symbol}: sold {sell_amount:.6f} @ {order['price']:.4f} | "
-                                    f"P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%) | Remaining: {pos['amount']:.6f}"
+                                    f"P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%) | Remaining: {pos['amount']:.6f}",
+                                    summary={
+                                        "symbol": symbol,
+                                        "action": "SELL",
+                                        "reason": f"Partial take-profit level {i} executed",
+                                        "price": order["price"],
+                                        "amount": sell_amount,
+                                        "realized_pnl": realized_pnl,
+                                        "exit_reason": f"partial_take_profit_level_{i}",
+                                    }
                                 )
                 else:
                     # Single partial TP (existing logic, unchanged)
@@ -2415,7 +2545,14 @@ class TradingEngine:
                             )
                             if self.notifier:
                                 await self.notifier.send_notification(
-                                    f"📰 Negative news exit for {symbol} (sentiment {agg['avg_compound']:.2f})"
+                                    f"📰 Negative news exit for {symbol} (sentiment {agg['avg_compound']:.2f})",
+                                    summary={
+                                        "symbol": symbol,
+                                        "action": "SELL",
+                                        "reason": "News sentiment exit",
+                                        "sentiment": agg,
+                                        "exit_reason": "news_sentiment_exit",
+                                    }
                                 )
                             await self._execute_signal(
                                 symbol,
@@ -2434,7 +2571,14 @@ class TradingEngine:
                         logger.info(f"Max unrealized loss reached for {symbol} ({max_ul_pct:.2%}). Closing position.")
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"📉 Soft stop triggered for {symbol} at {current_price:.4f} (max loss {max_ul_pct:.2%})"
+                                f"📉 Soft stop triggered for {symbol} at {current_price:.4f} (max loss {max_ul_pct:.2%})",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SELL",
+                                    "reason": "Max unrealized loss",
+                                    "price": current_price,
+                                    "exit_reason": "max_unrealized_loss",
+                                }
                             )
                         await self._execute_signal(
                             symbol,
@@ -2451,7 +2595,13 @@ class TradingEngine:
                         logger.info(f"Max hold time reached for {symbol} ({max_hold}s). Closing position.")
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"⏰ Max hold time reached for {symbol} – closing position."
+                                f"⏰ Max hold time reached for {symbol} – closing position.",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SELL",
+                                    "reason": "Max hold time",
+                                    "exit_reason": "max_hold_time",
+                                }
                             )
                         await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Max hold time"), exit_reason="max_hold_time")
                         continue   # skip further checks for this symbol
@@ -2460,7 +2610,14 @@ class TradingEngine:
                     logger.info(f"Stop-loss triggered for {symbol} at {current_price}")
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"⛔ Stop‑loss triggered for {symbol} at {current_price:.4f}"
+                            f"⛔ Stop‑loss triggered for {symbol} at {current_price:.4f}",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SELL",
+                                "reason": "Stop-loss",
+                                "price": current_price,
+                                "exit_reason": "stop_loss",
+                            }
                         )
                     await self._execute_signal(symbol, Signal(action="SELL", confidence=1.0, reasoning="Stop-loss"), exit_reason="stop_loss")
                 elif current_price >= pos["take_profit"]:
@@ -2532,7 +2689,14 @@ class TradingEngine:
                     )
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"⚠️ Skipping BUY {symbol}: profit too small ({expected_gross_profit:.4f} {quote})"
+                            f"⚠️ Skipping BUY {symbol}: profit too small ({expected_gross_profit:.4f} {quote})",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SKIP",
+                                "reason": "Expected profit below minimum",
+                                "expected_profit": expected_gross_profit,
+                                "min_profit": min_profit,
+                            }
                         )
                     return
 
@@ -2543,7 +2707,14 @@ class TradingEngine:
             if amount <= 0:
                 logger.info(f"Insufficient {quote} to buy {symbol}")
                 if self.notifier:
-                    await self.notifier.send_notification(f"⚠️ Insufficient {quote} to buy {symbol}")
+                    await self.notifier.send_notification(
+                        f"⚠️ Insufficient {quote} to buy {symbol}",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "Insufficient balance",
+                        }
+                    )
                 return
 
             # Check minimum order size and adjust upward if needed
@@ -2576,7 +2747,13 @@ class TradingEngine:
                         )
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"⚠️ BUY skipped for {symbol}: amount adjusted to {amount:.2f} but insufficient remaining budget"
+                                f"⚠️ BUY skipped for {symbol}: amount adjusted to {amount:.2f} but insufficient remaining budget",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SKIP",
+                                    "reason": "Adjusted amount exceeds remaining budget",
+                                    "adjusted_amount": amount,
+                                }
                             )
                         return
                     logger.info(
@@ -2585,7 +2762,13 @@ class TradingEngine:
                     )
                     if self.notifier:
                         await self.notifier.send_notification(
-                            f"ℹ️ {symbol}: buy amount adjusted to {amount:.2f} {quote} to meet minimum"
+                            f"ℹ️ {symbol}: buy amount adjusted to {amount:.2f} {quote} to meet minimum",
+                            summary={
+                                "symbol": symbol,
+                                "action": "INFO",
+                                "reason": "Buy amount adjusted to meet minimum",
+                                "adjusted_amount": amount,
+                            }
                         )
                     # Recalculate base_amount for the order
                     base_amount = amount / price
@@ -2700,11 +2883,32 @@ class TradingEngine:
                 await self._save_state()
                 if self.notifier:
                     buy_msg = f"🟢 BUY {symbol}: {order['amount']:.6f} @ {order['price']:.4f}"
-                    await self.notifier.send_notification(buy_msg)
+                    await self.notifier.send_notification(
+                        buy_msg,
+                        summary={
+                            "symbol": symbol,
+                            "action": "BUY",
+                            "price": order["price"],
+                            "amount": order["amount"],
+                            "confidence": signal.confidence,
+                            "reason": signal.reasoning[:200],
+                            "strategy_type": signal.strategy_type,
+                            "indicators": {
+                                "atr": atr,
+                            },
+                        }
+                    )
             except Exception as e:
                 logger.error(f"Buy order failed for {symbol}: {e}")
                 if self.notifier:
-                    await self.notifier.send_notification(f"❌ Buy order failed for {symbol}: {e}")
+                    await self.notifier.send_notification(
+                        f"❌ Buy order failed for {symbol}: {e}",
+                        summary={
+                            "symbol": symbol,
+                            "action": "ERROR",
+                            "reason": f"Buy order failed: {e}"[:200],
+                        }
+                    )
 
         elif signal.action == "SELL":
             # Fetch fee rate for this symbol
@@ -2718,7 +2922,14 @@ class TradingEngine:
             if gross_amount <= 0:
                 logger.info(f"No {base} to sell for {symbol}")
                 if self.notifier:
-                    await self.notifier.send_notification(f"⚠️ No {base} to sell for {symbol}")
+                    await self.notifier.send_notification(
+                        f"⚠️ No {base} to sell for {symbol}",
+                        summary={
+                            "symbol": symbol,
+                            "action": "SKIP",
+                            "reason": "No base balance to sell",
+                        }
+                    )
                 return
 
             # Check minimum sell size
@@ -2732,12 +2943,26 @@ class TradingEngine:
                 if min_amount_limit is not None and gross_amount < float(min_amount_limit):
                     logger.info(f"SELL amount {gross_amount:.6f} {base} below min amount {min_amount_limit} for {symbol}, skipping")
                     if self.notifier:
-                        await self.notifier.send_notification(f"⚠️ SELL skipped for {symbol}: amount too small")
+                        await self.notifier.send_notification(
+                            f"⚠️ SELL skipped for {symbol}: amount too small",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SKIP",
+                                "reason": "Sell amount below minimum",
+                            }
+                        )
                     return
                 if min_cost_limit is not None and gross_amount * price < float(min_cost_limit):
                     logger.info(f"SELL cost {gross_amount * price:.2f} {quote} below min cost {min_cost_limit} for {symbol}, skipping")
                     if self.notifier:
-                        await self.notifier.send_notification(f"⚠️ SELL skipped for {symbol}: cost too small")
+                        await self.notifier.send_notification(
+                            f"⚠️ SELL skipped for {symbol}: cost too small",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SKIP",
+                                "reason": "Sell cost below minimum",
+                            }
+                        )
                     return
             except Exception as e:
                 logger.warning(f"Could not verify min sell size for {symbol}: {e}")
@@ -2807,8 +3032,31 @@ class TradingEngine:
                     if pos:
                         pnl_pct = (realized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
                         sell_msg += f" | P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%)"
-                    await self.notifier.send_notification(sell_msg)
+                    await self.notifier.send_notification(
+                        sell_msg,
+                        summary={
+                            "symbol": symbol,
+                            "action": "SELL",
+                            "price": order["price"],
+                            "amount": order["amount"],
+                            "confidence": signal.confidence,
+                            "reason": signal.reasoning[:200],
+                            "exit_reason": exit_reason,
+                            "realized_pnl": realized_pnl,
+                            "strategy_type": signal.strategy_type,
+                            "indicators": {
+                                "atr": atr,
+                            },
+                        }
+                    )
             except Exception as e:
                 logger.error(f"Sell order failed for {symbol}: {e}")
                 if self.notifier:
-                    await self.notifier.send_notification(f"❌ Sell order failed for {symbol}: {e}")
+                    await self.notifier.send_notification(
+                        f"❌ Sell order failed for {symbol}: {e}",
+                        summary={
+                            "symbol": symbol,
+                            "action": "ERROR",
+                            "reason": f"Sell order failed: {e}"[:200],
+                        }
+                    )

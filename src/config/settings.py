@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
 
+    # Data directory for logs, database, etc.
+    DATA_DIR: str = "data"
+
     # Database
     DATABASE_PATH: str = "data/bot.db"
 

@@ -1,6 +1,9 @@
 import asyncio
+import json
 import logging
-from datetime import datetime
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from src.config.settings import settings
@@ -13,6 +16,8 @@ from src.llm.cache import get_cached_llm_response
 logger = logging.getLogger(__name__)
 
 class TelegramBot:
+    _log_lock = threading.Lock()
+
     def __init__(self, engine: TradingEngine):
         self.engine = engine
         self.redis = get_redis_client()
@@ -479,8 +484,8 @@ class TelegramBot:
 
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
-    async def send_notification(self, message: str):
-        """Send a notification to the stored chat ID."""
+    async def send_notification(self, message: str, summary: dict = None):
+        """Send a notification to the stored chat ID and optionally log a summary."""
         chat_id = await asyncio.to_thread(get_telegram_chat_id)
         logger.info(f"send_notification called, chat_id={chat_id}, message={message[:50]}...")
         if not chat_id:
@@ -491,6 +496,23 @@ class TelegramBot:
             logger.info("Notification sent successfully.")
         except Exception as e:
             logger.error(f"Failed to send Telegram notification: {e}", exc_info=True)
+
+        # --- Log summary to JSONL file ---
+        if summary is not None:
+            data_dir = Path(settings.DATA_DIR)
+            data_dir.mkdir(parents=True, exist_ok=True)
+            log_path = data_dir / "notifications.jsonl"
+
+            # Ensure a UTC timestamp is present
+            if "timestamp" not in summary:
+                summary["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            def _write_log():
+                with TelegramBot._log_lock:
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(summary, ensure_ascii=False) + "\n")
+
+            await asyncio.to_thread(_write_log)
 
     async def start(self):
         """Start the bot (initialize, start polling, start application)."""
