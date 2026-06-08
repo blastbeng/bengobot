@@ -531,7 +531,11 @@ Example: If ATR=50 and current price=5000, a 2× ATR stop distance is 100, so st
 - You must set a cooldown duration for every BUY. After a losing trade on a coin, the bot will skip that coin for the duration you specify.
 - If the daily realized P&L is deeply negative or market conditions are poor, you may select 0 coins in the coin selection step. This will pause trading until the next evaluation cycle.
 
-You may also set a daily profit target by including the optional field `"daily_profit_target_pct"` in your coin selection JSON. This is a decimal between 0 and 1.0 (e.g., 0.02 for 2%). If the day's realized P&L reaches or exceeds this percentage of the initial balance, the bot will pause trading until the next day. Use this to lock in profits and avoid overtrading after a successful day.
+You may also request to pause or resume trading by including the optional boolean field `"pause_trading"` in your coin selection JSON.
+- Set `"pause_trading": true` to immediately pause all trading (the bot will stop opening new positions and only manage existing ones). Use this when market conditions are extremely unfavorable, losses are mounting, or you detect a high‑risk environment.
+- Set `"pause_trading": false` to resume trading if it was previously paused.
+- If you omit this field, the current pause state remains unchanged.
+The bot will honour your pause/resume decision at the next coin evaluation cycle. Use this to protect capital during bad markets and to re‑enter when conditions improve.
 
 You may also set a global coin re-evaluation interval by including the optional field `"coin_revaluation_interval_seconds"` in your coin selection JSON. This controls how often the bot re-evaluates the entire coin list. Set a shorter interval (e.g., 120-300s) for fast scalping, or a longer interval (e.g., 900-1800s) for slower markets. Minimum 60 seconds. If omitted, the previous value (or default 900s) is kept.
 
@@ -750,9 +754,9 @@ Return a JSON object with two fields:
 
 You may optionally include "coin_revaluation_interval_seconds" (integer >= 60) to change how often the bot re-evaluates the coin list.
 
-You may optionally include "daily_profit_target_pct" (float between 0 and 1) to set a daily profit target. If reached, trading pauses until the next day.
+You may optionally include "pause_trading" (boolean) to pause or resume trading. Set true to pause, false to resume. Omit to leave the current state unchanged.
 
-Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "daily_profit_target_pct": 0.02}}"""
+Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "pause_trading": false}}"""
     if coin_scores:
         prompt += "\nScalping suitability scores (0-1, higher = better for quick small profits):\n"
         for sym in available_pairs[:50]:
