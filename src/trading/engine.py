@@ -33,6 +33,7 @@ from src.llm.prompts import (
     compute_vwap,
     compute_ichimoku,
     compute_parabolic_sar,
+    compute_keltner_channels,
     _format_news_for_prompt,
 )
 try:
@@ -1718,6 +1719,16 @@ class TradingEngine:
                     sar_lows = [c[3] for c in candles]
                     parabolic_sar = compute_parabolic_sar(sar_highs, sar_lows)
 
+            # Compute Keltner Channels for the assigned timeframe
+            keltner_channels = None
+            if assigned_tf in multi_tf_raw_candles:
+                candles = multi_tf_raw_candles[assigned_tf]
+                if len(candles) >= 21:
+                    kc_closes = [c[4] for c in candles]
+                    kc_highs = [c[2] for c in candles]
+                    kc_lows = [c[3] for c in candles]
+                    keltner_channels = compute_keltner_channels(kc_closes, kc_highs, kc_lows)
+
             # Compute VWAP for each timeframe
             vwap_multi_tf: Dict[str, float] = {}
             for tf in settings.OHLCV_TIMEFRAMES:
@@ -2050,6 +2061,7 @@ class TradingEngine:
                 market_breadth=getattr(self, '_market_breadth', None),
                 depth_trend=depth_trend,
                 parabolic_sar=parabolic_sar,
+                keltner_channels=keltner_channels,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:

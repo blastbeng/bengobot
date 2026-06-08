@@ -360,6 +360,46 @@ def compute_parabolic_sar(
     return round(sar, 8)
 
 
+def compute_keltner_channels(
+    closes: List[float], highs: List[float], lows: List[float],
+    ema_period: int = 20, atr_mult: float = 2.0, atr_period: int = 10
+) -> Optional[Dict[str, float]]:
+    """Compute Keltner Channels (upper, middle, lower).
+
+    Middle line = EMA of closes.
+    Upper/Lower = middle ± atr_mult * ATR.
+    Returns dict with 'upper', 'middle', 'lower', or None if insufficient data.
+    """
+    if len(closes) < max(ema_period, atr_period + 1):
+        return None
+
+    # Middle line: EMA of closes
+    ema_vals = compute_ema(closes, ema_period)
+    if not ema_vals:
+        return None
+    middle = ema_vals[-1]
+
+    # ATR from the provided highs, lows, closes
+    tr_values = []
+    for i in range(1, len(closes)):
+        tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+        tr_values.append(tr)
+    if len(tr_values) < atr_period:
+        return None
+    atr = sum(tr_values[:atr_period]) / atr_period
+    for i in range(atr_period, len(tr_values)):
+        atr = (atr * (atr_period - 1) + tr_values[i]) / atr_period
+
+    upper = middle + atr_mult * atr
+    lower = middle - atr_mult * atr
+
+    return {
+        "upper": round(upper, 8),
+        "middle": round(middle, 8),
+        "lower": round(lower, 8),
+    }
+
+
 def compute_macd(
     closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9
 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
@@ -900,6 +940,7 @@ def build_strategy_prompt(
     market_breadth: Optional[Dict[str, Any]] = None,
     depth_trend: Optional[float] = None,
     parabolic_sar: Optional[float] = None,
+    keltner_channels: Optional[Dict[str, float]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -1261,6 +1302,21 @@ Maximum coins to trade: {max_coins}
             "When the price is above the SAR, the trend is up; when below, the trend is down. "
             "The SAR can be used as a dynamic stop‑loss level: place your stop just below the SAR in an uptrend, "
             "or just above in a downtrend. A flip of the SAR relative to price signals a potential trend reversal.\n"
+        )
+    if keltner_channels:
+        prompt += (
+            f"\nKeltner Channels (20 EMA, 2× ATR): "
+            f"Upper={keltner_channels['upper']:.6f}, "
+            f"Middle={keltner_channels['middle']:.6f}, "
+            f"Lower={keltner_channels['lower']:.6f}\n"
+        )
+        prompt += (
+            "Keltner Channels are volatility‑based envelopes. "
+            "Price near the upper band suggests overbought conditions; near the lower band suggests oversold. "
+            "A breakout above the upper band with expanding ATR signals strong momentum; "
+            "a squeeze (bands narrowing) indicates low volatility and often precedes a large move. "
+            "Use the middle line as dynamic support/resistance. "
+            "Combine with other indicators to confirm entries and exits.\n"
         )
 
     # --- News section (detailed articles) ---
