@@ -73,6 +73,7 @@ class TradingEngine:
         self._last_strategy_eval: Dict[str, float] = {}   # symbol -> timestamp of last strategy evaluation
         self._strategy_intervals: Dict[str, float] = {}    # symbol -> custom interval in seconds
         self._coin_revaluation_interval = COIN_REVALUATION_INTERVAL
+        self._daily_profit_target_pct: Optional[float] = None
         self.notifier = None
         self._load_state()
         # Restore paper simulator state from trade history
@@ -681,6 +682,31 @@ class TradingEngine:
             try:
                 await self._reconcile_positions()
 
+                # --- Daily profit target ---
+                if self._daily_profit_target_pct is not None and self._daily_profit_target_pct > 0:
+                    daily_pnl = self._daily_realized_pnl()
+                    target_amount = self._daily_profit_target_pct * self.initial_balance
+                    if daily_pnl >= target_amount:
+                        logger.info(
+                            f"Daily profit target reached: {daily_pnl:.2f} >= {target_amount:.2f}. Pausing trading."
+                        )
+                        await asyncio.to_thread(self.redis.set, "trading:paused", "1")
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"🏆 Daily profit target hit ({daily_pnl:.2f} / {target_amount:.2f}). Trading paused until tomorrow."
+                            )
+
+                # Reset daily profit pause at midnight UTC
+                from datetime import datetime, timezone
+                now_utc = datetime.now(timezone.utc)
+                if now_utc.hour == 0 and now_utc.minute < 5:
+                    was_paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                    if was_paused:
+                        logger.info("New day – resetting daily profit pause.")
+                        await asyncio.to_thread(self.redis.delete, "trading:paused")
+                        if self.notifier:
+                            await self.notifier.send_notification("🌅 New day – trading resumed.")
+
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                 if paused:
                     logger.info("Trading is paused. Skipping cycle.")
@@ -1068,6 +1094,15 @@ class TradingEngine:
                         logger.info(f"LLM set coin re-evaluation interval to {new_interval}s")
                     else:
                         logger.warning(f"Invalid coin_revaluation_interval_seconds: {new_interval}")
+
+                # Optional: LLM can set a daily profit target
+                profit_target = parsed.get("daily_profit_target_pct")
+                if profit_target is not None:
+                    if isinstance(profit_target, (int, float)) and 0.0 <= profit_target <= 1.0:
+                        self._daily_profit_target_pct = profit_target
+                        logger.info(f"LLM set daily profit target to {profit_target:.2%}")
+                    else:
+                        logger.warning(f"Invalid daily_profit_target_pct: {profit_target}")
 
                 self.current_coins = deduped[: self.effective_max_coins]
 

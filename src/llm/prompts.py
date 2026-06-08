@@ -310,6 +310,8 @@ Example: If ATR=50 and current price=5000, a 2× ATR stop distance is 100, so st
 - You must set a cooldown duration for every BUY. After a losing trade on a coin, the bot will skip that coin for the duration you specify.
 - If the daily realized P&L is deeply negative or market conditions are poor, you may select 0 coins in the coin selection step. This will pause trading until the next evaluation cycle.
 
+You may also set a daily profit target by including the optional field `"daily_profit_target_pct"` in your coin selection JSON. This is a decimal between 0 and 1.0 (e.g., 0.02 for 2%). If the day's realized P&L reaches or exceeds this percentage of the initial balance, the bot will pause trading until the next day. Use this to lock in profits and avoid overtrading after a successful day.
+
 You may also set a global coin re-evaluation interval by including the optional field `"coin_revaluation_interval_seconds"` in your coin selection JSON. This controls how often the bot re-evaluates the entire coin list. Set a shorter interval (e.g., 120-300s) for fast scalping, or a longer interval (e.g., 900-1800s) for slower markets. Minimum 60 seconds. If omitted, the previous value (or default 900s) is kept.
 
 You will receive recent news headlines with sentiment scores for each coin. Use this information to gauge market sentiment and potential catalysts.
@@ -512,7 +514,9 @@ Return a JSON object with two fields:
 
 You may optionally include "coin_revaluation_interval_seconds" (integer >= 60) to change how often the bot re-evaluates the coin list.
 
-Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300}}"""
+You may optionally include "daily_profit_target_pct" (float between 0 and 1) to set a daily profit target. If reached, trading pauses until the next day.
+
+Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "daily_profit_target_pct": 0.02}}"""
     if coin_scores:
         prompt += "\nScalping suitability scores (0-1, higher = better for quick small profits):\n"
         for sym in available_pairs[:50]:
