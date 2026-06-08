@@ -263,6 +263,7 @@
         <div class="header-left">
             <span class="logo">Bengobot</span>
             <span id="mode-badge" style="background: var(--accent); color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">...</span>
+            <span id="model-badge" style="background: #a371f7; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; margin-left: 8px;">...</span>
         </div>
         <div class="status-badge">
             <span class="status-dot" id="status-dot"></span>
@@ -393,7 +394,7 @@
                     span.textContent = `${coin.symbol} (${coin.timeframe})`;
                     span.className = 'clickable-coin';
                     span.style.marginRight = '8px';
-                    span.onclick = () => openChart(coin.symbol);
+                    span.onclick = () => openChart(coin.symbol, coin.timeframe);
                     coinsDiv.appendChild(span);
                 });
             } else {
@@ -731,11 +732,12 @@
             if (currentSymbol) fetchAndRenderChart(currentSymbol, timeframeSelect.value);
         };
 
-        async function openChart(symbol) {
+        async function openChart(symbol, timeframe = '1h') {
             currentSymbol = symbol;
             chartTitle.textContent = symbol;
+            timeframeSelect.value = timeframe;
             modal.style.display = 'flex';
-            await fetchAndRenderChart(symbol, timeframeSelect.value);
+            await fetchAndRenderChart(symbol, timeframe);
         }
 
         async function fetchAndRenderChart(symbol, timeframe) {
@@ -811,6 +813,11 @@
                     } else {
                         badge.style.background = '#3fb950'; // green for paper
                     }
+                }
+                const modelBadge = document.getElementById('model-badge');
+                if (modelBadge && config.llm_provider) {
+                    const modelName = config.llm_provider === 'ollama' ? config.ollama_model : config.openai_model;
+                    modelBadge.textContent = `🧠 ${config.llm_provider.toUpperCase()} / ${modelName}`;
                 }
             })
             .catch(() => {

@@ -135,6 +135,8 @@ class TelegramBot:
             return
 
         msg = "<b>📊 Current Status</b>\n\n"
+        llm_model = settings.OLLAMA_MODEL if settings.LLM_PROVIDER == "ollama" else settings.OPENAI_MODEL
+        msg += f"<b>🧠 LLM:</b> {settings.LLM_PROVIDER} / {llm_model}\n\n"
         coin_list = []
         for entry in coins:
             symbol = entry["symbol"]
