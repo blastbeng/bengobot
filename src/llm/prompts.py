@@ -400,6 +400,25 @@ def compute_keltner_channels(
     }
 
 
+def compute_pivot_points(high: float, low: float, close: float) -> Dict[str, float]:
+    """Compute classic Pivot Points from the previous period's high, low, close.
+
+    Returns dict with 'pivot', 'r1', 'r2', 's1', 's2'.
+    """
+    pivot = (high + low + close) / 3.0
+    r1 = 2.0 * pivot - low
+    s1 = 2.0 * pivot - high
+    r2 = pivot + (high - low)
+    s2 = pivot - (high - low)
+    return {
+        "pivot": round(pivot, 8),
+        "r1": round(r1, 8),
+        "r2": round(r2, 8),
+        "s1": round(s1, 8),
+        "s2": round(s2, 8),
+    }
+
+
 def compute_macd(
     closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9
 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
@@ -941,6 +960,7 @@ def build_strategy_prompt(
     depth_trend: Optional[float] = None,
     parabolic_sar: Optional[float] = None,
     keltner_channels: Optional[Dict[str, float]] = None,
+    pivot_points: Optional[Dict[str, float]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -1317,6 +1337,20 @@ Maximum coins to trade: {max_coins}
             "a squeeze (bands narrowing) indicates low volatility and often precedes a large move. "
             "Use the middle line as dynamic support/resistance. "
             "Combine with other indicators to confirm entries and exits.\n"
+        )
+    if pivot_points:
+        prompt += (
+            f"\nPivot Points (from previous {assigned_timeframe or 'period'} candle): "
+            f"Pivot={pivot_points['pivot']:.6f}, "
+            f"R1={pivot_points['r1']:.6f}, R2={pivot_points['r2']:.6f}, "
+            f"S1={pivot_points['s1']:.6f}, S2={pivot_points['s2']:.6f}\n"
+        )
+        prompt += (
+            "Pivot Points are classic support/resistance levels. "
+            "Price above the pivot suggests bullish bias; below suggests bearish. "
+            "R1 and R2 act as resistance; S1 and S2 act as support. "
+            "Use these levels to set take‑profit targets (near R1/R2) and stop‑loss levels (below S1/S2). "
+            "A break above R1 with volume can signal continuation; a rejection at R1 may be a selling opportunity.\n"
         )
 
     # --- News section (detailed articles) ---

@@ -34,6 +34,7 @@ from src.llm.prompts import (
     compute_ichimoku,
     compute_parabolic_sar,
     compute_keltner_channels,
+    compute_pivot_points,
     _format_news_for_prompt,
 )
 try:
@@ -1729,6 +1730,17 @@ class TradingEngine:
                     kc_lows = [c[3] for c in candles]
                     keltner_channels = compute_keltner_channels(kc_closes, kc_highs, kc_lows)
 
+            # Compute Pivot Points from the previous completed candle of the assigned timeframe
+            pivot_points = None
+            if assigned_tf in multi_tf_raw_candles:
+                candles = multi_tf_raw_candles[assigned_tf]
+                if len(candles) >= 2:
+                    prev_candle = candles[-2]  # second-to-last candle is the last completed one
+                    prev_high = prev_candle[2]
+                    prev_low = prev_candle[3]
+                    prev_close = prev_candle[4]
+                    pivot_points = compute_pivot_points(prev_high, prev_low, prev_close)
+
             # Compute VWAP for each timeframe
             vwap_multi_tf: Dict[str, float] = {}
             for tf in settings.OHLCV_TIMEFRAMES:
@@ -2062,6 +2074,7 @@ class TradingEngine:
                 depth_trend=depth_trend,
                 parabolic_sar=parabolic_sar,
                 keltner_channels=keltner_channels,
+                pivot_points=pivot_points,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:
