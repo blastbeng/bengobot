@@ -770,7 +770,13 @@ class TradingEngine:
                         await asyncio.to_thread(self.redis.set, "trading:paused", "1")
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"🏆 Daily profit target hit ({daily_pnl:.2f} / {target_amount:.2f}). Trading paused until tomorrow."
+                                f"🏆 Daily profit target hit ({daily_pnl:.2f} / {target_amount:.2f}). Trading paused until tomorrow.",
+                                summary={
+                                    "action": "INFO",
+                                    "reason": "Daily profit target hit",
+                                    "daily_pnl": daily_pnl,
+                                    "target_amount": target_amount,
+                                }
                             )
 
                 # Reset daily profit pause at midnight UTC
@@ -782,7 +788,13 @@ class TradingEngine:
                         logger.info("New day – resetting daily profit pause.")
                         await asyncio.to_thread(self.redis.delete, "trading:paused")
                         if self.notifier:
-                            await self.notifier.send_notification("🌅 New day – trading resumed.")
+                            await self.notifier.send_notification(
+                                "🌅 New day – trading resumed.",
+                                summary={
+                                    "action": "INFO",
+                                    "reason": "New day - trading resumed",
+                                }
+                            )
 
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                 if paused:
