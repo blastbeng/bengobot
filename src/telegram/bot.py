@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     _log_lock = threading.Lock()
-    MAX_LOG_SIZE = 10 * 1024 * 1024   # 10 MB
+    MAX_LOG_SIZE = 512 * 1024   # 512 KB
     MAX_LOG_BACKUPS = 10
 
     def __init__(self, engine: TradingEngine):
