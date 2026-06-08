@@ -459,6 +459,7 @@ def build_coin_selection_prompt(
     session_info: Optional[Dict[str, Any]] = None,
     sentiment_trend: Optional[Dict[str, Optional[float]]] = None,
     volume_trends: Optional[Dict[str, Optional[float]]] = None,
+    market_breadth: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -675,6 +676,13 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
             "Prefer coins with elevated volume when looking for breakout or momentum trades; "
             "be cautious with low-volume coins as moves may lack conviction.\n"
         )
+    if market_breadth:
+        prompt += (
+            f"\nMarket breadth: {market_breadth['positive_pct']}% of {market_breadth['total_count']} "
+            f"candidate coins have a positive 24h change ({market_breadth['positive_count']} positive).\n"
+            "High breadth (>70%) indicates broad market strength (risk-on); low breadth (<30%) indicates weakness (risk-off). "
+            "Use this to gauge overall market participation and adjust your coin selection and risk parameters accordingly.\n"
+        )
     if news_section:
         prompt += f"\n{news_section}\n"
     prompt += (
@@ -770,6 +778,7 @@ def build_strategy_prompt(
     session_info: Optional[Dict[str, Any]] = None,
     sentiment_trend: Optional[float] = None,
     volume_trend: Optional[float] = None,
+    market_breadth: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -1091,6 +1100,13 @@ Maximum coins to trade: {max_coins}
             "Elevated volume confirms the strength of a price move and increases the reliability of technical signals. "
             "Low volume during a breakout may signal a fakeout – reduce position size or wait for confirmation. "
             "Use this to adjust your confidence and position size accordingly.\n"
+        )
+    if market_breadth:
+        prompt += (
+            f"\nMarket breadth: {market_breadth['positive_pct']}% of {market_breadth['total_count']} "
+            f"candidate coins have a positive 24h change ({market_breadth['positive_count']} positive).\n"
+            "High breadth (>70%) indicates broad market strength (risk-on); low breadth (<30%) indicates weakness (risk-off). "
+            "Use this to gauge overall market participation and adjust your coin selection and risk parameters accordingly.\n"
         )
 
     # --- News section (detailed articles) ---

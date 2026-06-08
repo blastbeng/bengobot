@@ -88,6 +88,7 @@ class TradingEngine:
 
         # Track quote currency spent in the current cycle to avoid over-allocating
         self._cycle_spent = 0.0
+        self._market_breadth: Optional[Dict[str, Any]] = None
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
@@ -1314,6 +1315,17 @@ class TradingEngine:
         else:
             session_label = "Low activity"
         session_info = {"utc_hour": utc_hour, "session": session_label}
+
+        # Market breadth: percentage of candidate coins with positive 24h change
+        positive_count = sum(1 for sym in sample_pairs if (tickers.get(sym, {}).get('percentage') or 0) > 0)
+        total_count = len(sample_pairs)
+        market_breadth = {
+            "positive_pct": round(positive_count / total_count * 100, 1) if total_count > 0 else 0.0,
+            "positive_count": positive_count,
+            "total_count": total_count,
+        }
+        self._market_breadth = market_breadth
+
         prompt = build_coin_selection_prompt(
             available_pairs=sample_pairs,
             current_coins=self.current_coins,
@@ -1339,6 +1351,7 @@ class TradingEngine:
             session_info=session_info,
             sentiment_trend=sentiment_trend,
             volume_trends=volume_trends,
+            market_breadth=market_breadth,
         )
         try:
             response = await asyncio.wait_for(
