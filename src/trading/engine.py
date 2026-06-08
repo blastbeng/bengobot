@@ -1015,6 +1015,23 @@ class TradingEngine:
                 except Exception as e:
                     logger.debug(f"Could not fetch news sentiment for {sym}: {e}")
 
+        # Sentiment trend (delta from previous cycle)
+        sentiment_trend: Dict[str, Optional[float]] = {}
+        for sym in sample_pairs:
+            base_coin = sym.split("/")[0] if "/" in sym else sym
+            current_compound = None
+            if base_coin in news_sentiment:
+                current_compound = news_sentiment[base_coin].get("avg_compound")
+            prev_key = f"sentiment:prev:{base_coin}"
+            prev_raw = await asyncio.to_thread(self.redis.get, prev_key)
+            prev_compound = float(prev_raw) if prev_raw else None
+            if current_compound is not None:
+                await asyncio.to_thread(self.redis.setex, prev_key, settings.NEWS_CACHE_TTL_SECONDS, str(current_compound))
+            if current_compound is not None and prev_compound is not None:
+                sentiment_trend[base_coin] = round(current_compound - prev_compound, 4)
+            else:
+                sentiment_trend[base_coin] = None
+
         # Overall market trend (use BTC/USDT as benchmark)
         market_trend = None
         btc_symbol = "BTC/USDT"
@@ -1283,6 +1300,7 @@ class TradingEngine:
             fear_greed_index=fear_greed,
             relative_strength_btc=relative_strength_btc,
             session_info=session_info,
+            sentiment_trend=sentiment_trend,
         )
         try:
             response = await asyncio.wait_for(
@@ -1841,6 +1859,19 @@ class TradingEngine:
                 except Exception as e:
                     logger.debug(f"Could not fetch aggregate sentiment for {symbol}: {e}")
 
+            # Sentiment trend for this coin
+            sentiment_trend_val = None
+            if aggregate_sentiment:
+                base_coin = symbol.split("/")[0] if "/" in symbol else symbol
+                current_compound = aggregate_sentiment.get("avg_compound")
+                prev_key = f"sentiment:prev:{base_coin}"
+                prev_raw = await asyncio.to_thread(self.redis.get, prev_key)
+                prev_compound = float(prev_raw) if prev_raw else None
+                if current_compound is not None:
+                    await asyncio.to_thread(self.redis.setex, prev_key, settings.NEWS_CACHE_TTL_SECONDS, str(current_compound))
+                if current_compound is not None and prev_compound is not None:
+                    sentiment_trend_val = round(current_compound - prev_compound, 4)
+
             remaining = max(0.0, base_balance - self._cycle_spent)
             fear_greed = await self._get_fear_greed_index()
             # Current trading session
@@ -1918,6 +1949,7 @@ class TradingEngine:
                 vwap=vwap,
                 vwap_multi_tf=vwap_multi_tf,
                 session_info=session_info,
+                sentiment_trend=sentiment_trend_val,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:

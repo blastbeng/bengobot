@@ -457,6 +457,7 @@ def build_coin_selection_prompt(
     fear_greed_index: Optional[Dict[str, Any]] = None,
     relative_strength_btc: Optional[Dict[str, Dict[str, Any]]] = None,
     session_info: Optional[Dict[str, Any]] = None,
+    sentiment_trend: Optional[Dict[str, Optional[float]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -651,6 +652,16 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
                     f"neutral={ns['neutral']}, total_articles={ns['total_articles']}\n"
                 )
         prompt += "\n"
+    if sentiment_trend:
+        prompt += "\nSentiment trend (change in compound score since last cycle):\n"
+        for base, delta in sentiment_trend.items():
+            if delta is not None:
+                prompt += f"  {base}: {delta:+.4f}\n"
+        prompt += (
+            "A positive delta means sentiment is improving; a negative delta means it is deteriorating. "
+            "Use this to gauge whether the narrative is strengthening or weakening. "
+            "Improving sentiment may justify higher confidence; deteriorating sentiment may warrant caution.\n"
+        )
     if news_section:
         prompt += f"\n{news_section}\n"
     prompt += (
@@ -744,6 +755,7 @@ def build_strategy_prompt(
     vwap: Optional[float] = None,
     vwap_multi_tf: Optional[Dict[str, float]] = None,
     session_info: Optional[Dict[str, Any]] = None,
+    sentiment_trend: Optional[float] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -1050,6 +1062,13 @@ Maximum coins to trade: {max_coins}
             "Use this aggregate sentiment to adjust your confidence, position size, and risk parameters. "
             "Strong positive sentiment may justify higher confidence and larger positions; "
             "strong negative sentiment should make you more cautious or even skip the trade.\n"
+        )
+    if sentiment_trend is not None:
+        prompt += f"\nSentiment trend (change in compound score since last cycle): {sentiment_trend:+.4f}\n"
+        prompt += (
+            "A positive delta means sentiment is improving; a negative delta means it is deteriorating. "
+            "Use this to adjust your confidence and risk parameters: improving sentiment may justify a larger position, "
+            "while deteriorating sentiment may warrant a smaller position or tighter stops.\n"
         )
 
     # --- News section (detailed articles) ---
