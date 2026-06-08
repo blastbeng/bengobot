@@ -1664,7 +1664,7 @@ class TradingEngine:
                 logger.info(f"Skipping {symbol}: spread {spread_pct:.4f}% exceeds LLM max {max_spread:.4f}%")
                 if self.notifier:
                     await self.notifier.send_notification(
-                        f"⚠️ Skipping {symbol}: spread too high ({spread_pct:.4f}%)"
+                        f"⚠️ Skipping {symbol}: spread too high ({spread_pct:.4f}% > {max_spread:.4f}%)"
                     )
                 return
 

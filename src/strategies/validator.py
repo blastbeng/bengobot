@@ -173,6 +173,14 @@ def validate_signal(
             msp = params["max_spread_pct"]
             if not isinstance(msp, (int, float)) or msp <= 0:
                 return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_spread_pct")
+            # Enforce a minimum to prevent overly strict filtering (e.g., 0.01%)
+            MIN_MAX_SPREAD_PCT = 0.01  # 0.01% minimum
+            if msp < MIN_MAX_SPREAD_PCT:
+                return Signal(
+                    action="HOLD",
+                    confidence=0.0,
+                    reasoning=f"max_spread_pct {msp} is below minimum allowed {MIN_MAX_SPREAD_PCT}"
+                )
         if "min_depth_at_take_profit" in params:
             mdatp = params["min_depth_at_take_profit"]
             if not isinstance(mdatp, (int, float)) or mdatp <= 0:
