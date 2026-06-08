@@ -435,6 +435,7 @@ def build_coin_selection_prompt(
     historical_ohlcv_summary: Optional[Dict[str, Dict[str, Any]]] = None,
     correlation_matrix: Optional[Dict[str, Dict[str, float]]] = None,
     fear_greed_index: Optional[Dict[str, Any]] = None,
+    relative_strength_btc: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -599,6 +600,16 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
             "Use it to gauge the general mood: extreme fear may present buying opportunities, "
             "extreme greed may signal a market top. Adjust your coin selection and risk parameters accordingly.\n"
         )
+    if relative_strength_btc:
+        prompt += "\nRelative strength vs BTC (ratio = coin_price / btc_price; relative_24h_pct = outperformance vs BTC over 24h):\n"
+        for sym, data in relative_strength_btc.items():
+            rel_str = f"{data['relative_24h_pct']:+.2f}%" if data['relative_24h_pct'] is not None else "N/A"
+            prompt += f"  {sym}: ratio={data['ratio']:.8f}, 24h rel={rel_str}\n"
+        prompt += (
+            "A rising ratio means the coin is outperforming BTC, which is a bullish signal. "
+            "A falling ratio means it's underperforming. Use this to identify coins with strong relative momentum. "
+            "Prefer coins with positive relative 24h performance, but use your own judgement.\n"
+        )
     if news_sentiment:
         prompt += "\n## News Sentiment\n"
         prompt += "Aggregate sentiment from recent news articles (compound score -1 to +1, higher = more positive):\n"
@@ -701,6 +712,7 @@ def build_strategy_prompt(
     multi_tf_indicators: Optional[Dict[str, Dict[str, Any]]] = None,
     scalping_feasibility_score: Optional[float] = None,
     fear_greed_index: Optional[Dict[str, Any]] = None,
+    relative_strength_btc: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     prompt = f"""Symbol: {symbol}
@@ -767,6 +779,14 @@ Maximum coins to trade: {max_coins}
             "This index reflects overall market sentiment (0 = Extreme Fear, 100 = Extreme Greed). "
             "Use it to gauge the general mood: extreme fear may present buying opportunities, "
             "extreme greed may signal a market top. Adjust your coin selection and risk parameters accordingly.\n"
+        )
+    if relative_strength_btc:
+        rel_str = f"{relative_strength_btc['relative_24h_pct']:+.2f}%" if relative_strength_btc.get('relative_24h_pct') is not None else "N/A"
+        prompt += (
+            f"\nRelative strength vs BTC: ratio={relative_strength_btc['ratio']:.8f}, "
+            f"24h relative performance={rel_str}\n"
+            "A positive relative performance means this coin is outperforming BTC, which may indicate strong momentum. "
+            "Use this to adjust your confidence and position size.\n"
         )
 
     # --- Volatility, order book imbalance, and position P&L context ---

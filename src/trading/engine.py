@@ -1034,6 +1034,27 @@ class TradingEngine:
                     "last": t.get("last"),
                 }
 
+        # Relative strength vs BTC
+        relative_strength_btc: Dict[str, Dict[str, Any]] = {}
+        btc_price = tickers.get("BTC/USDT", {}).get("last")
+        btc_change_24h = tickers.get("BTC/USDT", {}).get("percentage")
+        if btc_price and btc_price > 0:
+            for sym in sample_pairs:
+                t = tickers.get(sym, {})
+                coin_price = t.get("last")
+                if coin_price and coin_price > 0:
+                    ratio = coin_price / btc_price
+                    coin_change = t.get("percentage")
+                    if coin_change is not None and btc_change_24h is not None:
+                        # Relative performance: (1+coin_change)/(1+btc_change) - 1
+                        rel_perf = ((1 + coin_change / 100) / (1 + btc_change_24h / 100) - 1) * 100
+                    else:
+                        rel_perf = None
+                    relative_strength_btc[sym] = {
+                        "ratio": round(ratio, 8),
+                        "relative_24h_pct": round(rel_perf, 2) if rel_perf is not None else None,
+                    }
+
         # Determine top coins by volume for OHLCV fetch (limit to 20 to avoid rate limits)
         def _volume(sym):
             t = tickers.get(sym, {})
@@ -1246,6 +1267,7 @@ class TradingEngine:
             historical_ohlcv_summary=historical_ohlcv_summary,
             correlation_matrix=correlation_matrix,
             fear_greed_index=fear_greed,
+            relative_strength_btc=relative_strength_btc,
         )
         try:
             response = await asyncio.wait_for(
@@ -1439,6 +1461,25 @@ class TradingEngine:
 
         try:
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+            # Relative strength vs BTC for this coin
+            rel_strength_btc = None
+            try:
+                btc_ticker = await asyncio.to_thread(self.exchange.fetch_ticker, "BTC/USDT")
+                btc_price = btc_ticker.get("last")
+                if btc_price and btc_price > 0 and ticker.get("last"):
+                    ratio = ticker["last"] / btc_price
+                    coin_change = ticker.get("percentage")
+                    btc_change = btc_ticker.get("percentage")
+                    if coin_change is not None and btc_change is not None:
+                        rel_perf = ((1 + coin_change / 100) / (1 + btc_change / 100) - 1) * 100
+                    else:
+                        rel_perf = None
+                    rel_strength_btc = {
+                        "ratio": round(ratio, 8),
+                        "relative_24h_pct": round(rel_perf, 2) if rel_perf is not None else None,
+                    }
+            except Exception:
+                pass
             order_book = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
             # Fetch recent trades for micro-momentum and liquidity assessment
             recent_trades_raw = []
@@ -1837,6 +1878,7 @@ class TradingEngine:
                 multi_tf_indicators=multi_tf_indicators,
                 scalping_feasibility_score=scalping_score,
                 fear_greed_index=fear_greed,
+                relative_strength_btc=rel_strength_btc,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
             try:
