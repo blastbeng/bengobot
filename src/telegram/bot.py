@@ -513,9 +513,10 @@ class TelegramBot:
         """Return a minimal version of the summary dict to keep the notification log small."""
         # Allowed keys – only these will be kept
         allowed_keys = {
-            "timestamp", "symbol", "action", "confidence", "reason",
+            "symbol", "action", "confidence", "reason",
             "price", "amount", "realized_pnl", "exit_reason", "mode",
             "coins", "daily_pnl", "target_amount", "strategy_type",
+            "sentiment", "backtest",
         }
         compact = {}
         for key in allowed_keys:
@@ -529,6 +530,16 @@ class TelegramBot:
                 if key == "coins" and isinstance(value, list):
                     if value and isinstance(value[0], dict):
                         value = [c.get("symbol", c) for c in value]
+                # Compact sentiment to just avg_compound and total_articles
+                if key == "sentiment" and isinstance(value, dict):
+                    value = {
+                        "avg_compound": value.get("avg_compound"),
+                        "total_articles": value.get("total_articles"),
+                    }
+                # Truncate backtest summary to 50 characters
+                if key == "backtest" and isinstance(value, str):
+                    if len(value) > 50:
+                        value = value[:47] + "..."
                 compact[key] = value
         return compact
 
