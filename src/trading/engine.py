@@ -877,7 +877,27 @@ class TradingEngine:
         per_coin_budget = base_balance / self.max_coins if self.max_coins > 0 else 0.0
 
         # Fetch tickers for a subset to keep prompt size manageable
-        sample_pairs = available_pairs[:50]
+        # Apply sentiment filter if configured
+        if settings.COIN_SELECTION_MIN_SENTIMENT > -1.0 and settings.NEWS_ENABLED:
+            # Pre-fetch sentiment for all available pairs (or a larger batch) to filter
+            # To avoid too many DB calls, we can fetch sentiment for the first N pairs
+            candidate_pairs = available_pairs[:settings.COIN_SELECTION_MAX_PAIRS * 2]  # look at a larger pool
+            filtered_pairs = []
+            for sym in candidate_pairs:
+                try:
+                    base_coin = sym.split("/")[0] if "/" in sym else sym
+                    agg = await asyncio.to_thread(get_aggregate_sentiment_from_db, base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
+                    if agg and agg["avg_compound"] >= settings.COIN_SELECTION_MIN_SENTIMENT:
+                        filtered_pairs.append(sym)
+                    elif not agg:
+                        # No sentiment data – include by default (or you can skip)
+                        filtered_pairs.append(sym)
+                except Exception:
+                    filtered_pairs.append(sym)  # include if error
+            sample_pairs = filtered_pairs[:settings.COIN_SELECTION_MAX_PAIRS]
+        else:
+            sample_pairs = available_pairs[:settings.COIN_SELECTION_MAX_PAIRS]
+
         tickers = await asyncio.to_thread(get_tickers, self.exchange, sample_pairs)
 
         # --- Fetch order books for top coins to compute real spread/depth for scalping score ---

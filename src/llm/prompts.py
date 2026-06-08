@@ -314,7 +314,7 @@ You may also set a daily profit target by including the optional field `"daily_p
 
 You may also set a global coin re-evaluation interval by including the optional field `"coin_revaluation_interval_seconds"` in your coin selection JSON. This controls how often the bot re-evaluates the entire coin list. Set a shorter interval (e.g., 120-300s) for fast scalping, or a longer interval (e.g., 900-1800s) for slower markets. Minimum 60 seconds. If omitted, the previous value (or default 900s) is kept.
 
-You will receive recent news headlines with sentiment scores for each coin. Use this information to gauge market sentiment and potential catalysts.
+You will receive recent news headlines with sentiment scores for each coin. **Sentiment is a primary factor in coin selection.** Use this information to gauge market sentiment and potential catalysts. Prefer coins with strong positive sentiment; avoid coins with negative sentiment unless technicals are exceptionally bullish.
 - Strong positive sentiment may justify higher confidence, larger position sizes, and longer max hold times.
 - Strong negative sentiment should make you more cautious: reduce position size, tighten stops, shorten max hold time, or avoid the coin entirely.
 - Neutral or mixed sentiment should not override technical signals, but can be used as a tie‑breaker.

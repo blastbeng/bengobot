@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Max coins to trade
     MAX_COINS: int = 10
 
+    # Coin selection
+    COIN_SELECTION_MAX_PAIRS: int = 100          # max pairs to include in the LLM prompt
+    COIN_SELECTION_MIN_SENTIMENT: float = -1.0   # minimum aggregate sentiment compound to consider a coin (-1.0 = no filter)
+
     @field_validator("TRADING_MODE")
     @classmethod
     def validate_trading_mode(cls, v: str) -> str:
