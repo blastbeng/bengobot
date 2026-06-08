@@ -508,6 +508,30 @@ class TelegramBot:
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(summary, ensure_ascii=False) + "\n")
 
+    @staticmethod
+    def _compact_summary(summary: dict) -> dict:
+        """Return a minimal version of the summary dict to keep the notification log small."""
+        # Allowed keys – only these will be kept
+        allowed_keys = {
+            "timestamp", "symbol", "action", "confidence", "reason",
+            "price", "amount", "realized_pnl", "exit_reason", "mode",
+            "coins", "daily_pnl", "target_amount", "strategy_type",
+        }
+        compact = {}
+        for key in allowed_keys:
+            if key in summary:
+                value = summary[key]
+                # Truncate reason to 50 characters
+                if key == "reason" and isinstance(value, str):
+                    if len(value) > 50:
+                        value = value[:47] + "..."
+                # If coins is a list of dicts, keep only the symbols
+                if key == "coins" and isinstance(value, list):
+                    if value and isinstance(value[0], dict):
+                        value = [c.get("symbol", c) for c in value]
+                compact[key] = value
+        return compact
+
     async def send_notification(self, message: str, summary: dict = None):
         """Send a notification to the stored chat ID and optionally log a summary."""
         chat_id = await asyncio.to_thread(get_telegram_chat_id)
@@ -530,6 +554,9 @@ class TelegramBot:
             # Ensure a UTC timestamp is present
             if "timestamp" not in summary:
                 summary["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            # Compact the summary to keep the log small
+            summary = self._compact_summary(summary)
 
             await asyncio.to_thread(self._write_notification_log, log_path, summary)
 
