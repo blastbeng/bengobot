@@ -672,6 +672,7 @@ def build_coin_selection_prompt(
     btc_dominance: Optional[float] = None,
     total_market_cap: Optional[Dict[str, Any]] = None,
     altcoin_season: Optional[Dict[str, Any]] = None,
+    trading_paused: Optional[bool] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -754,9 +755,20 @@ Return a JSON object with two fields:
 
 You may optionally include "coin_revaluation_interval_seconds" (integer >= 60) to change how often the bot re-evaluates the coin list.
 
-You may optionally include "pause_trading" (boolean) to pause or resume trading. Set true to pause, false to resume. Omit to leave the current state unchanged.
-
 Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "pause_trading": false}}"""
+    if trading_paused:
+        prompt += (
+            "\n**Trading is currently PAUSED.** "
+            "If market conditions have improved (e.g., positive sentiment, strong momentum, low risk), "
+            "you may resume trading by setting `\"pause_trading\": false` in your response. "
+            "Only do this if you see clear opportunities; otherwise leave it omitted to stay paused.\n"
+        )
+    else:
+        prompt += (
+            "\n**Trading is currently ACTIVE.** "
+            "You may pause trading by setting `\"pause_trading\": true` if conditions warrant "
+            "(e.g., high losses, poor market breadth, extreme fear).\n"
+        )
     if coin_scores:
         prompt += "\nScalping suitability scores (0-1, higher = better for quick small profits):\n"
         for sym in available_pairs[:50]:

@@ -1361,6 +1361,10 @@ class TradingEngine:
         }
         self._market_breadth = market_breadth
 
+        # Check if trading is currently paused
+        trading_paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
+        trading_paused_bool = trading_paused_raw is not None and trading_paused_raw == b"1"
+
         prompt = build_coin_selection_prompt(
             available_pairs=sample_pairs,
             current_coins=self.current_coins,
@@ -1390,6 +1394,7 @@ class TradingEngine:
             btc_dominance=global_market.get("btc_dominance") if global_market else None,
             total_market_cap=global_market if global_market else None,
             altcoin_season=altcoin_season,
+            trading_paused=trading_paused_bool,
         )
         try:
             response = await asyncio.wait_for(
