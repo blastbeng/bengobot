@@ -815,6 +815,9 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
         "\n**When deciding to pause or resume, also consider the news sentiment data provided below.** "
         "Broadly negative and deteriorating sentiment across the market may warrant a pause; "
         "improving sentiment or strong positive sentiment on specific coins may support resuming.\n"
+        "- **Before pausing, check the \"Top Profit Opportunities\" section.** If any coin has a scalping score > 0.7 and positive sentiment, do NOT pause – trade that coin with reduced size if necessary.\n"
+        "- Only pause if NO such opportunities exist, or if the account is in significant drawdown with no high‑confidence setups.\n"
+        "- Avoid pausing solely because of a bad market index (e.g., high fear, low breadth). A fearful market often presents the best buying opportunities.\n"
     )
     if coin_scores:
         prompt += "\nScalping suitability scores (0-1, higher = better for quick small profits):\n"
