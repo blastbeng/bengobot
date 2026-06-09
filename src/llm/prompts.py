@@ -805,6 +805,11 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "E
             "strong positive sentiment, and clear technical signals, you may still trade them profitably even in a down market.\n"
             "Only pause if NO such opportunities exist, or if the account is in significant drawdown with no high‑confidence setups.\n"
         )
+    prompt += (
+        "\n**When deciding to pause or resume, also consider the news sentiment data provided below.** "
+        "Broadly negative and deteriorating sentiment across the market may warrant a pause; "
+        "improving sentiment or strong positive sentiment on specific coins may support resuming.\n"
+    )
     if coin_scores:
         prompt += "\nScalping suitability scores (0-1, higher = better for quick small profits):\n"
         for sym in available_pairs[:50]:
