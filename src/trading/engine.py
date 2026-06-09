@@ -1468,6 +1468,7 @@ class TradingEngine:
             trading_paused=trading_paused_bool,
             open_positions=self.positions,
         )
+        parsed = {}
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(get_cached_llm_response, prompt, SYSTEM_PROMPT, 300),
@@ -1696,12 +1697,22 @@ class TradingEngine:
                     }
                 )
         elif self.notifier:
+            # Extract LLM reasoning for coin selection
+            coin_reasoning = parsed.get("reasoning", "") if isinstance(parsed, dict) else ""
+            if coin_reasoning:
+                # Truncate to avoid overly long notifications
+                if len(coin_reasoning) > 200:
+                    coin_reasoning = coin_reasoning[:197] + "..."
+                msg = f"🔄 Coins updated: {', '.join(coin_labels)}\n💡 {coin_reasoning}"
+            else:
+                msg = f"🔄 Coins updated: {', '.join(coin_labels)}"
             await self.notifier.send_notification(
-                f"🔄 Coins updated: {', '.join(coin_labels)}",
+                msg,
                 summary={
                     "action": "INFO",
                     "reason": "Coins updated",
                     "coins": [c["symbol"] for c in self.current_coins],
+                    "coin_reasoning": coin_reasoning,
                 }
             )
 
