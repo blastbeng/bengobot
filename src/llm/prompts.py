@@ -513,8 +513,13 @@ Key principles:
 - Only trade coins with strong, confirmed short-term momentum and sufficient volatility to cover fees. Avoid low-volatility or choppy (sideways) markets entirely.
 - You will receive raw OHLCV candle data. Compute your own technical indicators (RSI, MACD, Bollinger Bands, moving averages, etc.) from this data. Use them to time entries and exits. Require confirmation from at least two independent indicators before taking a trade.
 - Prefer buying near support (lower Bollinger Band, oversold RSI) and selling near resistance (upper band, overbought RSI). Never chase a breakout without confirmation.
-- Set a stop-loss based on recent swing lows, support levels, or ATR. Use the ATR to gauge volatility and choose a stop distance that gives the trade enough room to breathe while limiting risk. You decide the appropriate multiplier and reward:risk ratio based on current market conditions, volatility, and your confidence. You have full freedom to choose the stop distance. Use the ATR to gauge volatility and set a stop that gives the trade enough room while limiting risk. There is no hardcoded minimum – you decide what is appropriate.
-Example: If ATR=50 and current price=5000, a 2× ATR stop distance is 100, so stop_loss_pct = 100/5000 = 0.02 (2%). Place the stop at 4900. If the nearest swing low is at 4920, use that as the stop level (distance 80, which is 1.6× ATR, still acceptable).
+- **Prefer ATR‑based stops.** Use `"stop_loss_method": "atr_multiple"` and set `stop_loss_atr_multiple` to a value that reflects current volatility and market structure.
+  - For normal volatility, a multiplier of **1.5–2.5** is typical.
+  - In high‑volatility environments (ATR percentile > 80%), use a larger multiplier (2.5–4.0) to avoid being shaken out.
+  - In low‑volatility environments (ATR percentile < 20%), you may use a tighter multiplier (1.0–1.5) but beware of sudden expansions.
+  - The engine will compute the stop distance as `stop_loss_atr_multiple × ATR` and convert it to a percentage of the current price automatically.
+- You may still use a fixed percentage stop (`"stop_loss_method": "fixed"`) if you have a strong reason, but ensure the percentage is at least **1.5× the ATR%** (ATR / price) unless you are intentionally scalping a very tight range.
+- Always set a stop that gives the trade enough room to breathe while limiting risk. There is no hardcoded minimum – you decide what is appropriate.
 - Set a take-profit that you believe is achievable given the current trend, volatility, and order‑book depth. The reward:risk ratio is entirely your decision; you may accept lower ratios if the probability of success is high, or demand higher ratios in uncertain markets.
 - **CRITICAL – READ THIS TWICE:** `take_profit_pct` MUST be strictly greater than `stop_loss_pct`.  
   If you accidentally set `take_profit_pct ≤ stop_loss_pct`, the entire trade will be rejected and the bot will do nothing.  
@@ -609,7 +614,9 @@ If action is BUY or SELL, include a strategy. If HOLD, strategy can be null.
 
 You MUST include the following risk parameters inside the "parameters" object for every BUY or SELL action. All numeric values must be numbers, not strings.
 
-- "stop_loss_pct": a decimal between 0.001 and 0.5 (e.g., 0.02 for 2%). Must be greater than 0 and less than 1.0. This is required unless you use the "atr_multiple" stop-loss method (see below).
+- "stop_loss_method": "fixed" (default) or "atr_multiple". If "atr_multiple", the stop distance is computed as stop_loss_atr_multiple × ATR, and "stop_loss_pct" is optional (if provided, it will be ignored). Use this to set a volatility‑based stop. **Prefer "atr_multiple" – it adapts to current market conditions.**
+- "stop_loss_atr_multiple": required if stop_loss_method is "atr_multiple". A positive float (e.g., 2.0 for 2× ATR). The stop distance will be (multiplier × ATR) / current_price.
+- "stop_loss_pct": required if stop_loss_method is "fixed". A decimal between 0.001 and 0.5 (e.g., 0.02 for 2%). Must be greater than 0 and less than 1.0. If using "atr_multiple", this field is optional and will be ignored.
 - "take_profit_pct": a decimal between 0.005 and 2.0 (e.g., 0.05 for 5%). Must be greater than stop_loss_pct and at least 2× the fee rate.
 - "trailing_stop": true or false to enable a trailing stop.
 - "trailing_stop_distance_pct": required if "trailing_stop" is true; a decimal between 0.001 and 0.1 (e.g., 0.01 for 1%). Must be less than stop_loss_pct. If "trailing_stop" is false, set this to null.
@@ -619,8 +626,6 @@ You MUST include the following risk parameters inside the "parameters" object fo
 
 You may also include the following optional parameters to fine-tune risk management:
 
-- "stop_loss_method": "fixed" (default) or "atr_multiple". If "atr_multiple", the stop distance is computed as stop_loss_atr_multiple × ATR, and "stop_loss_pct" is optional (if provided, it will be ignored). Use this to set a volatility-based stop.
-- "stop_loss_atr_multiple": required if stop_loss_method is "atr_multiple". A positive float (e.g., 2.0 for 2× ATR). The stop distance will be (multiplier × ATR) / current_price.
 - "trailing_stop_activation_pct": a decimal between 0 and 1.0 (e.g., 0.02 for 2%). The trailing stop will only start updating once the price has moved in your favor by at least this percentage from the entry price. If omitted, the trailing stop is active immediately.
 - "trailing_take_profit": an optional boolean (default false). If true, the take‑profit price will trail the current price upward by a fixed percentage (`trailing_take_profit_distance_pct`). The take‑profit never moves down. This allows you to capture more profit in trending moves while still scalping small percentages.
 - "trailing_take_profit_distance_pct": required if `trailing_take_profit` is true. A decimal between 0.001 and 0.1 (e.g., 0.002 for 0.2%). The take‑profit will be set to `current_price * (1 + trailing_take_profit_distance_pct)` whenever the price rises, but it will never decrease.
@@ -1257,10 +1262,13 @@ Maximum coins to trade: {max_coins}
     if atr is not None:
         prompt += f"ATR (14-period, {assigned_timeframe or 'default'}): {atr:.6f}\n"
         prompt += (
-            "Use the ATR to set your stop-loss distance. Convert the chosen distance into a percentage "
-            "of the current price for the stop_loss_pct parameter. You decide the appropriate multiplier "
-            "based on current volatility and your risk assessment.\n"
-            "You may set any stop distance you believe is appropriate. Use the ATR to inform your decision, but there is no enforced minimum.\n"
+            "**Strongly prefer using ATR‑based stops.** Set `\"stop_loss_method\": \"atr_multiple\"` and provide "
+            "`stop_loss_atr_multiple`. Choose the multiplier based on volatility and market regime: "
+            "1.5–2.5 for normal conditions, 2.5–4.0 for high volatility (ATR percentile > 80%), "
+            "1.0–1.5 for low volatility (ATR percentile < 20%). "
+            "The engine will compute the stop distance as `multiplier × ATR` and convert it to a percentage. "
+            "This ensures your stop adapts to current market conditions.\n"
+            "If you use a fixed percentage stop, make sure it is at least 1.5× the ATR% unless you have a specific reason.\n"
         )
     if atr_percentile is not None:
         prompt += f"ATR percentile (relative to last 100 observations): {atr_percentile:.1f}%\n"
@@ -1701,8 +1709,11 @@ If the position is already in profit, consider trailing the stop.
 - Ichimoku Cloud: provides trend direction, support/resistance, and momentum in one system. Price above the cloud = uptrend; below = downtrend; inside = ranging/uncertain. Tenkan-sen crossing above Kijun-sen is bullish (golden cross); crossing below is bearish (death cross). The cloud (between Senkou Span A and B) acts as dynamic support/resistance. A thick cloud means strong S/R; a thin cloud is easily broken. Chikou Span (current close) above past prices confirms bullish momentum; below confirms bearish.
 
 You MUST include the following risk parameters in the "parameters" object:
-- stop_loss_pct (required unless using stop_loss_method="atr_multiple"), take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds, cooldown_after_loss_seconds.
-You may also include optional parameters: stop_loss_method, stop_loss_atr_multiple, trailing_stop_activation_pct, trailing_take_profit, trailing_take_profit_distance_pct, breakeven_activation_pct, lock_profit_activation_pct, lock_profit_level_pct, partial_take_profit_pct, partial_take_profit_fraction, partial_take_profit_levels, max_risk_per_trade_pct, min_profit_per_trade, min_risk_reward_ratio, max_spread_pct, min_depth_at_take_profit, max_slippage_pct, max_unrealized_loss_pct, min_confidence, entry_confidence_threshold, news_sentiment_exit_threshold, strategy_interval_seconds. See the system prompt for details.
+- stop_loss_method: "fixed" or "atr_multiple". **Prefer "atr_multiple"** – it adapts to current volatility.
+- stop_loss_atr_multiple: required if stop_loss_method is "atr_multiple". A positive float (e.g., 2.0 for 2× ATR).
+- stop_loss_pct: required if stop_loss_method is "fixed". A decimal between 0.001 and 0.5. Optional if using "atr_multiple".
+- take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds, cooldown_after_loss_seconds.
+You may also include optional parameters: trailing_stop_activation_pct, trailing_take_profit, trailing_take_profit_distance_pct, breakeven_activation_pct, lock_profit_activation_pct, lock_profit_level_pct, partial_take_profit_pct, partial_take_profit_fraction, partial_take_profit_levels, max_risk_per_trade_pct, min_profit_per_trade, min_risk_reward_ratio, max_spread_pct, min_depth_at_take_profit, max_slippage_pct, max_unrealized_loss_pct, min_confidence, entry_confidence_threshold, news_sentiment_exit_threshold, strategy_interval_seconds. See the system prompt for details.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
 **Fee awareness:** You are solely responsible for ensuring that every trade is profitable after fees and spread. The bot provides you with the taker fee rate and the current spread. You must set take_profit_pct (and partial_take_profit_pct if used) high enough to cover both entry and exit fees plus the spread, and still leave a net profit. There is no engine‑side minimum – if you set a take‑profit that is too low, the trade will lose money. Use the formula: minimum take_profit_pct = 1/(1-fee)^2 - 1 + spread_decimal. Add a buffer for safety.
