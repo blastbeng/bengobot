@@ -14,27 +14,39 @@ def get_available_pairs(exchange: ccxt.Exchange, base_currency: str) -> List[str
     return pairs
 
 def get_tickers(exchange: ccxt.Exchange, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Fetch tickers for given symbols. If symbols is None, fetch all."""
+    """Fetch tickers for given symbols. If symbols is None, fetch all.
+
+    For KuCoin and other exchanges that may 404 on bulk fetch_tickers,
+    falls back to fetching each ticker individually.
+    """
     params = {}
     if exchange.id == 'kucoin':
         params['type'] = 'spot'
     if symbols:
         try:
             return exchange.fetch_tickers(symbols, params=params)
-        except ccxt.ArgumentsRequired:
+        except Exception as e:
             logger.warning(
-                "fetch_tickers failed due to ambiguous market IDs; falling back to individual fetch_ticker calls"
+                "fetch_tickers failed for %s (%s); falling back to individual fetch_ticker calls",
+                exchange.id, e,
             )
             # Fallback: fetch each ticker individually
             tickers = {}
             for sym in symbols:
                 try:
                     tickers[sym] = exchange.fetch_ticker(sym, params=params)
-                except Exception as e:
-                    logger.warning("Failed to fetch ticker for %s: %s", sym, e)
+                except Exception as inner_e:
+                    logger.warning("Failed to fetch ticker for %s: %s", sym, inner_e)
             return tickers
     else:
-        return exchange.fetch_tickers(params=params)
+        try:
+            return exchange.fetch_tickers(params=params)
+        except Exception as e:
+            logger.warning(
+                "fetch_tickers (all) failed for %s (%s); returning empty dict",
+                exchange.id, e,
+            )
+            return {}
 
 def get_order_book(exchange: ccxt.Exchange, symbol: str, limit: int = 20) -> Dict[str, Any]:
     """Fetch order book for a symbol."""
