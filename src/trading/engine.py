@@ -1614,6 +1614,17 @@ class TradingEngine:
                                     "reason": f"LLM maintains pause: {pause_reason}" if pause_reason else "LLM maintains pause"
                                 }
                             )
+                # If trading is currently active and the LLM decided to keep it active, notify with reason
+                if not trading_paused_bool and pause_trading is False:
+                    if self.notifier:
+                        reason_text = f" – {pause_reason}" if pause_reason else ""
+                        await self.notifier.send_notification(
+                            f"▶️ Trading remains active by LLM decision{reason_text}",
+                            summary={
+                                "action": "INFO",
+                                "reason": f"LLM keeps trading active: {pause_reason}" if pause_reason else "LLM keeps trading active"
+                            }
+                        )
 
                 self.current_coins = deduped[: self.effective_max_coins]
 
