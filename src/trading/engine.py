@@ -2712,20 +2712,6 @@ class TradingEngine:
                                 )
                             return
 
-            # Respect the LLM's execute flag – skip trade if the LLM decided not to execute
-            if not getattr(validated, 'execute', True):
-                logger.info(f"LLM decided not to execute trade for {symbol}. Reason: {validated.reasoning}")
-                if self.notifier:
-                    await self.notifier.send_notification(
-                        f"⏭️ {symbol}: LLM skipped trade",
-                        summary={
-                            "symbol": symbol,
-                            "action": "HOLD",
-                            "reason": "LLM execute flag false",
-                        }
-                    )
-                return
-
             # Prevent SELL without an open position (no shorting)
             if validated.action == "SELL" and symbol not in self.positions:
                 logger.info(f"Skipping SELL for {symbol}: no open position.")

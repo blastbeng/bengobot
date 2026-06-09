@@ -52,10 +52,6 @@ def parse_llm_response(response_text: str) -> Signal:
         max_hold_minutes = data.get("max_hold_minutes")
         reason = data.get("reason", "")
 
-        execute = data.get("execute", True)
-        if not isinstance(execute, bool):
-            execute = True
-
         return Signal(
             action=action,
             confidence=confidence,
@@ -71,7 +67,6 @@ def parse_llm_response(response_text: str) -> Signal:
             trailing_stop=trailing_stop,
             max_hold_minutes=max_hold_minutes,
             reason=reason,
-            execute=execute,
         )
     except (json.JSONDecodeError, ValueError, TypeError):
         return Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response")

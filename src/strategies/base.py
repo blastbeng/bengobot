@@ -19,7 +19,6 @@ class Signal:
     trailing_stop: Optional[bool] = False    # whether to use a trailing stop
     max_hold_minutes: Optional[int] = None   # maximum time to hold the position
     reason: Optional[str] = None             # LLM's explanation (for logging)
-    execute: Optional[bool] = True           # LLM's final execution decision (default True for backward compat)
 
 
 class Strategy:

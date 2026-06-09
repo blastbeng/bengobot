@@ -1721,10 +1721,11 @@ The bot will NOT use any default values. If you omit any required parameter, the
 You are trading spot only (no shorting). Only output SELL if you currently hold the coin.
 
 **Execution Decision:**
-You must decide whether to actually execute this trade right now. Output a boolean field `"execute"` in your JSON.
-- Set `"execute": true` only if you are confident that entering this trade immediately will be profitable, considering all provided data (price, order book, balance, open positions, sentiment, technical indicators, fees, etc.).
-- Set `"execute": false` if you believe the trade should be skipped – for example, if the risk/reward is insufficient, the market is too choppy, or there is no clear edge. The engine will honour this and not place the trade.
-The `action`, `confidence`, and all other fields must still be provided as before, but the trade will only be executed when `execute` is true.
+Instead of a binary execute flag, use the optional `"min_confidence"` parameter to control whether the trade is executed.
+- Set `"min_confidence"` to a value between 0.0 and 1.0 (e.g., 0.6). The bot will skip the trade if your confidence is below this threshold.
+- If you omit `"min_confidence"`, the trade will be executed regardless of confidence (as long as all other parameters are valid).
+- Use this to enforce a minimum conviction level. For example, set `"min_confidence": 0.7` to only take high‑conviction trades.
+- You may also set `"min_confidence"` to 0.0 to effectively disable the filter.
 
 Return a JSON object as specified.
 """
