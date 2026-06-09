@@ -689,6 +689,7 @@ def build_coin_selection_prompt(
     top_opportunities: Optional[List[Dict[str, Any]]] = None,
     trading_paused: Optional[bool] = None,
     open_positions: Optional[Dict[str, Dict[str, Any]]] = None,
+    coin_tenure: Optional[Dict[str, float]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -771,6 +772,18 @@ Currently tracked coins (with assigned timeframes): {json.dumps(current_coins) i
             "If you pause, no new positions will be opened, but existing positions will still be "
             "managed with their stop-loss/take-profit levels. "
             "If you resume, new positions can be opened alongside these.\n"
+        )
+
+    if coin_tenure:
+        prompt += "\n**Coin tenure (how long each coin has been continuously tracked, in seconds):**\n"
+        for sym, sec in coin_tenure.items():
+            prompt += f"  {sym}: {sec:.0f}s\n"
+        prompt += (
+            "Coins that have been tracked for longer periods allow the bot to accumulate more "
+            "historical data and refine strategies. Frequent changes disrupt this learning process. "
+            "Therefore, **prefer to keep coins that are already in the list** unless there is a strong "
+            "reason to drop them (e.g., delisting, severe negative sentiment, consistent losses, "
+            "or budget constraints). Only replace a coin if the new candidate is clearly superior.\n"
         )
 
     prompt += f"""

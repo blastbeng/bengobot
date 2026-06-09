@@ -92,6 +92,7 @@ class TradingEngine:
 
         # Track quote currency spent in the current cycle to avoid over-allocating
         self._cycle_spent = 0.0
+        self._coin_first_seen: Dict[str, float] = {}  # symbol -> timestamp when first added
         self._market_breadth: Optional[Dict[str, Any]] = None
         self._risk_lock = asyncio.Lock()
 
@@ -1461,6 +1462,11 @@ class TradingEngine:
         trading_paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
         trading_paused_bool = trading_paused_raw is not None and trading_paused_raw == b"1"
 
+        # Compute coin tenure for the prompt
+        coin_tenure = {}
+        for sym, first_seen in self._coin_first_seen.items():
+            coin_tenure[sym] = round(now - first_seen)
+
         prompt = build_coin_selection_prompt(
             available_pairs=sample_pairs,
             current_coins=self.current_coins,
@@ -1492,6 +1498,7 @@ class TradingEngine:
             altcoin_season=altcoin_season,
             trading_paused=trading_paused_bool,
             open_positions=self.positions,
+            coin_tenure=coin_tenure,
         )
         parsed = {}
         try:
@@ -1699,6 +1706,16 @@ class TradingEngine:
                 tf = pos.get("timeframe") or (settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h")
                 self.current_coins.append({"symbol": symbol, "timeframe": tf})
                 logger.info(f"Keeping {symbol} in current_coins due to open position (timeframe={tf})")
+
+        # Update coin tenure tracking
+        now_ts = time.time()
+        new_symbols = {entry["symbol"] for entry in self.current_coins}
+        for sym in new_symbols:
+            if sym not in self._coin_first_seen:
+                self._coin_first_seen[sym] = now_ts
+        for sym in list(self._coin_first_seen.keys()):
+            if sym not in new_symbols:
+                del self._coin_first_seen[sym]
 
         # Trigger immediate backfill for newly selected coins
         old_symbols = {entry["symbol"] for entry in old_coins}
