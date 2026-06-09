@@ -173,6 +173,11 @@ class TelegramBot:
         else:
             msg += "  No balances\n"
 
+        # Trading paused status
+        paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+        status_text = "⏸️ Paused" if paused else "▶️ Active"
+        msg += f"\n<b>⚙️ Trading:</b> {status_text}\n"
+
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
     async def cmd_trades(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

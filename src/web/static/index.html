@@ -269,6 +269,10 @@
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Connecting...</span>
         </div>
+        <div class="status-badge" id="trading-status-badge" style="margin-left: 12px;">
+            <span class="status-dot" id="trading-dot"></span>
+            <span id="trading-status-text">Trading: ...</span>
+        </div>
         <button id="theme-toggle" title="Toggle theme" style="background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 1rem;">
             🌙
         </button>
@@ -385,6 +389,21 @@
         }
 
         function updateUI(data) {
+            // Trading status badge
+            const tradingDot = document.getElementById('trading-dot');
+            const tradingText = document.getElementById('trading-status-text');
+            if (data.paused) {
+                tradingDot.className = 'status-dot';
+                tradingDot.style.background = '#f85149';
+                tradingDot.style.boxShadow = '0 0 8px #f85149';
+                tradingText.textContent = 'Trading: Paused';
+            } else {
+                tradingDot.className = 'status-dot';
+                tradingDot.style.background = '#3fb950';
+                tradingDot.style.boxShadow = '0 0 8px #3fb950';
+                tradingText.textContent = 'Trading: Active';
+            }
+
             // Coins
             const coinsDiv = document.getElementById('coins');
             coinsDiv.innerHTML = '';
