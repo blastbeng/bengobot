@@ -642,6 +642,7 @@ You may also include the following optional parameters to fine-tune risk managem
 - "min_depth_at_take_profit": an optional positive number (in base currency, e.g., 0.5 for 0.5 BTC). If set, the bot will check the cumulative ask volume from the current mid price up to the take‑profit price. If that volume is less than this value, the trade will be skipped because the take‑profit may not fill without moving the price. Use this to ensure your scalp targets are reachable.
 - "max_slippage_pct": an optional positive number (e.g., 0.1 for 0.1%). If set, the bot will compute the expected average fill price for a market buy order of the intended size by walking the order book. If the average fill price exceeds the best ask by more than this percentage, the trade will be skipped. Use this to avoid excessive slippage on illiquid coins, which is essential for scalping very small percentages.
 - "max_unrealized_loss_pct": an optional decimal between 0 and 1.0 (e.g., 0.002 for 0.2%). If set, the bot will monitor the unrealized loss of the position. If the current price falls below `entry_price * (1 - max_unrealized_loss_pct)`, the position will be closed immediately, regardless of the stop‑loss. Use this as a soft stop to cut losses quickly when scalping tiny percentages. Must be less than `stop_loss_pct`.
+- "position_size_multiplier": an optional decimal between 0.0 and 1.0 (e.g., 0.5 for 50%). If set, the final position size for this trade will be further multiplied by this factor, after the global risk multiplier. Use this to reduce exposure on a specific coin without changing your global risk settings. If omitted, no additional per‑coin scaling is applied.
 - "min_confidence": an optional decimal between 0.0 and 1.0 (e.g., 0.6). If set, the bot will skip the trade if your confidence is below this threshold. Use this to enforce a minimum conviction level.
 
 You will also receive a summary of the most recent individual trades (last 20). Use this to gauge very short‑term momentum and whether the market is active enough for scalping. A high number of small trades with balanced buy/sell pressure and a tight price range suggests a liquid market suitable for capturing tiny percentages.
@@ -1108,6 +1109,7 @@ def build_strategy_prompt(
     estimated_slippage_pct: Optional[float] = None,
     atr_percentile: Optional[float] = None,
     market_impact_score: Optional[float] = None,
+    global_risk_multiplier: Optional[float] = None,
     trading_paused: bool = False,
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
@@ -1146,6 +1148,14 @@ Maximum coins to trade: {max_coins}
             f"{max_possible_amount:.2f} {base_currency} (the smaller of the per‑coin budget and the remaining balance). "
             "If you set `min_profit_per_trade`, ensure it is not larger than "
             "`max_possible_amount * take_profit_pct`. Otherwise the trade will be skipped.\n"
+        )
+    if global_risk_multiplier is not None and global_risk_multiplier < 1.0:
+        prompt += (
+            f"\n**Global risk multiplier is currently {global_risk_multiplier}.** "
+            "All position sizes will be multiplied by this factor. "
+            "The actual amount used will be: position_size_fraction × total_balance × global_risk_multiplier. "
+            "Adjust your position_size_fraction accordingly – if you want a certain exposure, "
+            "you may need to set a higher fraction to compensate, or accept the reduced size.\n"
         )
     prompt += (
         f"**position_size_fraction** now represents a fraction of your **total {base_currency} balance** (0.1 to 1.0). "

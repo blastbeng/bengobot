@@ -2270,6 +2270,16 @@ class TradingEngine:
             else:
                 session_label = "Low activity"
             session_info = {"utc_hour": utc_hour, "session": session_label}
+
+            # Fetch current global risk multiplier so the LLM can adjust position sizing
+            global_risk_mult = None
+            global_mult_raw = await asyncio.to_thread(self.redis.get, "trading:global_risk_multiplier")
+            if global_mult_raw:
+                try:
+                    global_risk_mult = float(global_mult_raw)
+                except (ValueError, TypeError):
+                    pass
+
             prompt = build_strategy_prompt(
                 symbol=symbol,
                 ticker=ticker,
@@ -2352,6 +2362,7 @@ class TradingEngine:
                 estimated_slippage_pct=estimated_slippage_pct,
                 atr_percentile=atr_percentile,
                 market_impact_score=market_impact_score,
+                global_risk_multiplier=global_risk_mult,
                 trading_paused=trading_paused,
             )
             logger.debug(f"LLM prompt for {symbol}: {len(prompt)} chars")
@@ -3348,6 +3359,27 @@ class TradingEngine:
                 desired_amount = min(desired_amount, max_allowed_amount)
                 logger.info(f"Max risk per trade: {max_risk_pct:.2%} of {total_value:.2f} = {max_risk_amount:.2f}, max allowed amount = {max_allowed_amount:.2f}")
 
+            # Apply global risk multiplier if set by LLM in coin selection
+            global_mult_raw = await asyncio.to_thread(self.redis.get, "trading:global_risk_multiplier")
+            if global_mult_raw:
+                try:
+                    global_mult = float(global_mult_raw)
+                    if 0.0 <= global_mult <= 1.0:
+                        desired_amount *= global_mult
+                        logger.info(f"Applied global risk multiplier {global_mult}: desired_amount={desired_amount:.2f}")
+                except (ValueError, TypeError):
+                    pass
+
+            # Apply per-coin position size multiplier if set by LLM in strategy params
+            per_coin_mult = params.get("position_size_multiplier")
+            if per_coin_mult is not None:
+                try:
+                    per_coin_mult = float(per_coin_mult)
+                    if 0.0 <= per_coin_mult <= 1.0:
+                        desired_amount *= per_coin_mult
+                        logger.info(f"Applied per-coin position multiplier {per_coin_mult}: desired_amount={desired_amount:.2f}")
+                except (ValueError, TypeError):
+                    pass
 
             # --- Minimum absolute profit check (LLM‑defined) ---
             min_profit = params.get("min_profit_per_trade")
