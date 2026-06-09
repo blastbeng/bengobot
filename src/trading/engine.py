@@ -93,6 +93,8 @@ class TradingEngine:
         # Track quote currency spent in the current cycle to avoid over-allocating
         self._cycle_spent = 0.0
         self._market_breadth: Optional[Dict[str, Any]] = None
+        self._risk_lock = asyncio.Lock()
+        self._risk_lock = asyncio.Lock()
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
@@ -295,15 +297,14 @@ class TradingEngine:
             logger.debug(f"News fetch/store failed for {symbol}: {e}")
 
     async def _risk_management_loop(self):
-        """Periodically check stop-loss, take-profit, and other risk management rules at a fast interval."""
-        # Initial delay to let the engine settle
-        await asyncio.sleep(10)
+        """Check stop-loss, take-profit, and other risk rules every 5 seconds."""
+        await asyncio.sleep(5)  # initial delay
         while True:
             try:
                 await self._save_state()
             except Exception as e:
                 logger.error(f"Risk management loop error: {e}", exc_info=True)
-            await asyncio.sleep(settings.RISK_CHECK_INTERVAL_SECONDS)
+            await asyncio.sleep(5)
 
     async def _refresh_current_coins_news_fast(self):
         """Fast news refresh loop – only for the coins currently tracked by the engine."""
@@ -991,7 +992,6 @@ class TradingEngine:
                     if now - last_eval >= interval:
                         await self._process_coin(coin_entry)
                         self._last_strategy_eval[symbol] = now
-                await self._check_risk_management()
                 await self._save_state()
             except Exception as e:
                 logger.error(f"Engine loop error: {e}", exc_info=True)
@@ -3344,8 +3344,9 @@ class TradingEngine:
 
     async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None, spread_pct: Optional[float] = None):
         """Execute a BUY or SELL signal."""
-        base, quote = symbol.split("/")
-        balance = await asyncio.to_thread(self.trader.fetch_balance)
+        async with self._risk_lock:
+            base, quote = symbol.split("/")
+            balance = await asyncio.to_thread(self.trader.fetch_balance)
 
         if signal.action == "BUY":
             # Safety: never buy when trading is paused
