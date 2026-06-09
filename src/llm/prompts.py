@@ -535,6 +535,7 @@ You may also request to pause or resume trading by including the optional boolea
 - Set `"pause_trading": true` to immediately pause all trading (the bot will stop opening new positions and only manage existing ones). Use this when market conditions are extremely unfavorable, losses are mounting, or you detect a high‑risk environment.
 - Set `"pause_trading": false` to resume trading if it was previously paused.
 - If you omit this field, the current pause state remains unchanged.
+**If you set `pause_trading`, you MUST also include a `"pause_reason"` field (a short string) explaining why you are pausing or resuming trading.** This reason will be shown to the user.
 The bot will honour your pause/resume decision at the next coin evaluation cycle. Use this to protect capital during bad markets and to re‑enter when conditions improve.
 
 You may also set a global coin re-evaluation interval by including the optional field `"coin_revaluation_interval_seconds"` in your coin selection JSON. This controls how often the bot re-evaluates the entire coin list. Set a shorter interval (e.g., 120-300s) for fast scalping, or a longer interval (e.g., 900-1800s) for slower markets. Minimum 60 seconds. If omitted, the previous value (or default 900s) is kept.
@@ -755,7 +756,7 @@ Return a JSON object with two fields:
 
 You may optionally include "coin_revaluation_interval_seconds" (integer >= 60) to change how often the bot re-evaluates the coin list.
 
-Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "pause_trading": false}}"""
+Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "coin_revaluation_interval_seconds": 300, "pause_trading": false, "pause_reason": "Market conditions are favorable"}}"""
     if trading_paused:
         prompt += (
             "\n**Trading is currently PAUSED.** "
