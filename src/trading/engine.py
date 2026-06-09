@@ -94,7 +94,6 @@ class TradingEngine:
         self._cycle_spent = 0.0
         self._market_breadth: Optional[Dict[str, Any]] = None
         self._risk_lock = asyncio.Lock()
-        self._risk_lock = asyncio.Lock()
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
@@ -301,6 +300,7 @@ class TradingEngine:
         await asyncio.sleep(5)  # initial delay
         while True:
             try:
+                await self._check_risk_management()
                 await self._save_state()
             except Exception as e:
                 logger.error(f"Risk management loop error: {e}", exc_info=True)
