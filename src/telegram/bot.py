@@ -40,9 +40,9 @@ class TelegramBot:
             [
                 [KeyboardButton("📊 Status"), KeyboardButton("📈 Trades")],
                 [KeyboardButton("💰 Profit"), KeyboardButton("🚀 Performance")],
-                [KeyboardButton("📰 News"), KeyboardButton("⚠️ Risk")],
+                [KeyboardButton("⚠️ Risk"), KeyboardButton("📰 News")],
                 [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
-                [KeyboardButton("🔄 Reload"), KeyboardButton("💸 Sell All")],
+                [KeyboardButton("📈 Market"), KeyboardButton("💸 Sell All")],
             ],
             resize_keyboard=True,
         )
@@ -65,7 +65,7 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("news", self.cmd_news_search))
         self.app.add_handler(CommandHandler("news_status", self.cmd_news_status))
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
-        self.app.add_handler(CommandHandler("reload", self.cmd_reload))
+        self.app.add_handler(CommandHandler("market", self.cmd_market))
         self.app.add_handler(CommandHandler("sell", self.cmd_sell))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_button))
 
@@ -105,8 +105,8 @@ class TelegramBot:
             await self.cmd_news(update, context)
         elif text == "⚠️ Risk":
             await self.cmd_risk(update, context)
-        elif text == "🔄 Reload":
-            await self.cmd_reload(update, context)
+        elif text == "📈 Market":
+            await self.cmd_market(update, context)
         elif text == "💸 Sell All":
             await self.cmd_sell(update, context)
         else:
@@ -346,6 +346,42 @@ class TelegramBot:
         )
         await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
 
+    async def cmd_market(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_authorized(update):
+            return
+        try:
+            raw = await asyncio.to_thread(self.redis.get, "market:status")
+            if not raw:
+                await update.message.reply_text("Market data not available yet.", reply_markup=self.keyboard)
+                return
+            data = json.loads(raw)
+        except Exception as e:
+            logger.error(f"Failed to get market status: {e}", exc_info=True)
+            await update.message.reply_text("⚠️ Could not retrieve market status.", reply_markup=self.keyboard)
+            return
+
+        msg = "<b>📈 Market Status</b>\n\n"
+        if data.get("fear_greed"):
+            fg = data["fear_greed"]
+            msg += f"<b>Fear & Greed:</b> {fg['value']} ({fg['classification']})\n"
+        if data.get("market_breadth"):
+            mb = data["market_breadth"]
+            msg += f"<b>Market Breadth:</b> {mb['positive_pct']}% positive ({mb['positive_count']}/{mb['total_count']})\n"
+        if data.get("btc_dominance") is not None:
+            msg += f"<b>BTC Dominance:</b> {data['btc_dominance']:.2f}%\n"
+        if data.get("global_market"):
+            gm = data["global_market"]
+            if gm.get("total_market_cap_usd"):
+                msg += f"<b>Total Market Cap:</b> ${gm['total_market_cap_usd'] / 1e9:.2f}B"
+                if gm.get("market_cap_change_24h_usd") is not None:
+                    change = gm["market_cap_change_24h_usd"]
+                    msg += f" ({change:+.2f}%)"
+                msg += "\n"
+        if data.get("altcoin_season"):
+            alt = data["altcoin_season"]
+            msg += f"<b>Altcoin Season:</b> {alt['value']} ({alt['description']})\n"
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=self.keyboard)
+
     async def cmd_news(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
             return
@@ -414,17 +450,6 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Failed to get news status: {e}", exc_info=True)
             await update.message.reply_text("⚠️ Could not retrieve news status.", reply_markup=self.keyboard)
-
-    async def cmd_reload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_authorized(update):
-            return
-        """Hot-reload the .env file."""
-        try:
-            settings.reload()
-            await update.message.reply_text("✅ Settings reloaded from .env file.", reply_markup=self.keyboard)
-        except Exception as e:
-            logger.error(f"Failed to reload settings: {e}", exc_info=True)
-            await update.message.reply_text(f"⚠️ Failed to reload settings: {e}", reply_markup=self.keyboard)
 
     async def cmd_sell(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
