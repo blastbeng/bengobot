@@ -701,6 +701,17 @@ class TradingEngine:
         drawdown_pct = ((peak - current_equity) / peak * 100) if peak > 0 else 0.0
 
         daily_pnl = self._daily_realized_pnl()
+
+        # Count consecutive losing trades (most recent first)
+        consecutive_losses = 0
+        for trade in reversed(self.trade_history):
+            if trade.get("side") == "sell":
+                pnl = trade.get("realized_pnl", 0.0)
+                if pnl < 0:
+                    consecutive_losses += 1
+                else:
+                    break
+
         return {
             "coin_performance": coin_perf,
             "strategy_performance": strategy_perf,
@@ -710,6 +721,7 @@ class TradingEngine:
                 "trend": trend,
                 "drawdown_pct": round(drawdown_pct, 2),
                 "daily_pnl": round(daily_pnl, 4),
+                "consecutive_losses": consecutive_losses,
             },
         }
 
@@ -893,6 +905,27 @@ class TradingEngine:
                 await self._reconcile_positions()
 
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                if paused:
+                    # Check if a pause duration was set and has elapsed
+                    pause_start_raw = await asyncio.to_thread(self.redis.get, "trading:pause_start")
+                    pause_duration_raw = await asyncio.to_thread(self.redis.get, "trading:pause_duration")
+                    if pause_start_raw and pause_duration_raw:
+                        try:
+                            pause_start = float(pause_start_raw)
+                            pause_duration = int(pause_duration_raw)
+                            if time.time() - pause_start >= pause_duration:
+                                logger.info("Pause duration elapsed – auto-resuming trading.")
+                                await asyncio.to_thread(self.redis.delete, "trading:paused")
+                                await asyncio.to_thread(self.redis.delete, "trading:pause_start")
+                                await asyncio.to_thread(self.redis.delete, "trading:pause_duration")
+                                if self.notifier:
+                                    await self.notifier.send_notification(
+                                        "▶️ Trading auto-resumed after pause duration elapsed.",
+                                        summary={"action": "INFO", "reason": "Pause duration elapsed"}
+                                    )
+                                paused = False  # continue to normal processing below
+                        except (ValueError, TypeError):
+                            pass  # ignore malformed values
                 if paused:
                     logger.info("Trading is paused. Only managing open positions.")
                     # Allow the LLM to re-evaluate coins – it may resume trading here
@@ -1518,6 +1551,7 @@ class TradingEngine:
                     if isinstance(pause_trading, bool):
                         if pause_trading:
                             await asyncio.to_thread(self.redis.set, "trading:paused", "1")
+                            await asyncio.to_thread(self.redis.set, "trading:pause_start", str(time.time()))
                             logger.info("LLM requested to pause trading.")
                             if self.notifier:
                                 reason_text = f" – {pause_reason}" if pause_reason else ""
@@ -1530,6 +1564,8 @@ class TradingEngine:
                                 )
                         else:
                             await asyncio.to_thread(self.redis.delete, "trading:paused")
+                            await asyncio.to_thread(self.redis.delete, "trading:pause_start")
+                            await asyncio.to_thread(self.redis.delete, "trading:pause_duration")
                             logger.info("LLM requested to resume trading.")
                             if self.notifier:
                                 reason_text = f" – {pause_reason}" if pause_reason else ""
@@ -1542,6 +1578,17 @@ class TradingEngine:
                                 )
                     else:
                         logger.warning(f"Invalid pause_trading value: {pause_trading}")
+
+                # Optional: LLM can set a pause duration after which trading auto-resumes
+                pause_duration = parsed.get("pause_duration_seconds")
+                if pause_duration is not None:
+                    if isinstance(pause_duration, (int, float)) and pause_duration > 0:
+                        await asyncio.to_thread(
+                            self.redis.setex, "trading:pause_duration", int(pause_duration), str(int(pause_duration))
+                        )
+                        logger.info(f"LLM set pause duration: {pause_duration}s")
+                    else:
+                        logger.warning(f"Invalid pause_duration_seconds: {pause_duration}")
 
                 # If trading is currently paused and the LLM did not resume, notify the user with the reason (if any)
                 if trading_paused_bool and pause_trading is not False:

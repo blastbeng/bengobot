@@ -536,6 +536,9 @@ You may also request to pause or resume trading by including the optional boolea
 - Set `"pause_trading": false` to resume trading if it was previously paused.
 - If you omit this field, the current pause state remains unchanged.
 **If you set `pause_trading`, you MUST also include a `"pause_reason"` field (a short string) explaining why you are pausing or resuming trading.** This reason will be shown to the user.
+
+You may also include an optional `"pause_duration_seconds"` field (positive integer) to specify how long the pause should last. After this duration, trading will automatically resume without waiting for the next evaluation cycle. Use this to implement a time‑bound pause (e.g., 3600 for 1 hour) when you expect conditions to improve after a known event.
+
 The bot will honour your pause/resume decision at the next coin evaluation cycle. Use this to protect capital during bad markets and to re‑enter when conditions improve.
 
 If trading is currently paused and you decide to keep it paused (by omitting `pause_trading` or setting it to true), you should also include a `pause_reason` explaining why you are maintaining the pause.
@@ -991,6 +994,9 @@ Use this historical data to select coins that have been profitable in the past, 
         prompt += perf_text
         if daily_pnl is not None:
             prompt += f"Today's realized P&L: {daily_pnl:.4f} {base_currency}\n"
+        consecutive_losses = performance.get("equity_curve", {}).get("consecutive_losses", 0)
+        if consecutive_losses > 0:
+            prompt += f"⚠️ You have {consecutive_losses} consecutive losing trades. Consider pausing or reducing risk.\n"
     prompt += (
         "\n**Important:** The engine will use your parameters exactly as you provide them. "
         "No additional scaling, clamping, or overrides will be applied. You are fully responsible "
