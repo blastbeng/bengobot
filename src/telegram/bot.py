@@ -548,15 +548,12 @@ class TelegramBot:
             "price", "amount", "realized_pnl", "exit_reason", "mode",
             "coins", "daily_pnl", "target_amount", "strategy_type",
             "sentiment", "backtest", "indicators",
+            "timestamp",
         }
         compact = {}
         for key in allowed_keys:
             if key in summary:
                 value = summary[key]
-                # Truncate reason to 50 characters
-                if key == "reason" and isinstance(value, str):
-                    if len(value) > 50:
-                        value = value[:47] + "..."
                 # If coins is a list of dicts, keep only the symbols
                 if key == "coins" and isinstance(value, list):
                     if value and isinstance(value[0], dict):
