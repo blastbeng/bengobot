@@ -683,6 +683,7 @@ def build_coin_selection_prompt(
     altcoin_season: Optional[Dict[str, Any]] = None,
     top_opportunities: Optional[List[Dict[str, Any]]] = None,
     trading_paused: Optional[bool] = None,
+    open_positions: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -746,8 +747,28 @@ Your available {base_currency} balance: {base_balance:.2f}
 Maximum number of coins to trade: {max_coins}
 Budget per coin (balance / max_coins): {per_coin_budget:.2f} {base_currency}
 Available timeframes: {json.dumps(settings.OHLCV_TIMEFRAMES)}
-Currently tracked coins (with assigned timeframes): {json.dumps(current_coins) if current_coins else "None"}
+Currently tracked coins (with assigned timeframes): {json.dumps(current_coins) if current_coins else "None"}"""
 
+    # --- Open positions summary ---
+    if open_positions:
+        prompt += "\n**Open positions (these will continue to be managed even if trading is paused):**\n"
+        for sym, pos in open_positions.items():
+            entry = pos.get("price", "?")
+            amount = pos.get("amount", "?")
+            sl = pos.get("stop_loss", "?")
+            tp = pos.get("take_profit", "?")
+            prompt += (
+                f"  {sym}: entry={entry}, amount={amount}, "
+                f"stop_loss={sl}, take_profit={tp}\n"
+            )
+        prompt += (
+            "When deciding to pause or resume trading, consider these open positions. "
+            "If you pause, no new positions will be opened, but existing positions will still be "
+            "managed with their stop-loss/take-profit levels. "
+            "If you resume, new positions can be opened alongside these.\n"
+        )
+
+    prompt += f"""
 Available trading pairs with market data and minimum trade cost (in {base_currency}):
 {json.dumps(ticker_summary, indent=2)}
 

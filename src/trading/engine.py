@@ -1466,6 +1466,7 @@ class TradingEngine:
             total_market_cap=global_market if global_market else None,
             altcoin_season=altcoin_season,
             trading_paused=trading_paused_bool,
+            open_positions=self.positions,
         )
         try:
             response = await asyncio.wait_for(
