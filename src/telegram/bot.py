@@ -42,7 +42,7 @@ class TelegramBot:
                 [KeyboardButton("💰 Profit"), KeyboardButton("🚀 Performance")],
                 [KeyboardButton("⚠️ Risk"), KeyboardButton("📰 News")],
                 [KeyboardButton("⏸️ Pause"), KeyboardButton("▶️ Resume")],
-                [KeyboardButton("📈 Market"), KeyboardButton("💸 Sell All")],
+                [KeyboardButton("🌐 Market"), KeyboardButton("💸 Sell All")],
             ],
             resize_keyboard=True,
         )
@@ -105,7 +105,7 @@ class TelegramBot:
             await self.cmd_news(update, context)
         elif text == "⚠️ Risk":
             await self.cmd_risk(update, context)
-        elif text == "📈 Market":
+        elif text == "🌐 Market":
             await self.cmd_market(update, context)
         elif text == "💸 Sell All":
             await self.cmd_sell(update, context)
