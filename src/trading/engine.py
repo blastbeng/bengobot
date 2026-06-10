@@ -593,17 +593,52 @@ class TradingEngine:
             await asyncio.sleep(settings.MARKET_DATA_REFRESH_SECONDS)
 
     def _restore_paper_state(self):
-        """Load paper balances directly from the database instead of replaying trades."""
-        # Load persisted balances
+        """Load paper balances and reconcile with trade history.
+
+        Instead of trusting the saved balances (which may be stale if a
+        crash occurred before they were persisted), we always replay the
+        full trade history from the initial balance.  This guarantees that
+        the in-memory balances are consistent with the recorded trades.
+        """
         saved_balances = load_paper_balances()
+
+        # Always reconcile: replay trade history to compute expected balances
+        expected_balances: Dict[str, float] = {self.base_currency: self.initial_balance}
+        for trade in self.trade_history:
+            symbol = trade["symbol"]
+            base, quote = symbol.split("/")
+            side = trade["side"]
+            amount = trade["amount"]
+            cost = trade.get("cost", amount * trade["price"])
+            fee = trade.get("fee", {})
+            fee_cost = float(fee.get("cost", 0) or 0)
+            fee_currency = fee.get("currency", "")
+
+            if side == "buy":
+                expected_balances[quote] = expected_balances.get(quote, 0) - cost
+                net_base = amount - (fee_cost if fee_currency == base else 0)
+                expected_balances[base] = expected_balances.get(base, 0) + net_base
+            elif side == "sell":
+                net_quote = cost - (fee_cost if fee_currency == quote else 0)
+                expected_balances[quote] = expected_balances.get(quote, 0) + net_quote
+                expected_balances[base] = expected_balances.get(base, 0) - amount
+
+        # Compare with saved balances and log warnings for mismatches
         if saved_balances:
-            self.trader.balances = saved_balances
-            logger.info("Loaded paper balances from database: %s", saved_balances)
-        else:
-            # First run – initialise with the configured initial balance
-            self.trader.balances = {self.base_currency: self.initial_balance}
-            logger.info("No saved paper balances; initialising with %.2f %s",
-                        self.initial_balance, self.base_currency)
+            for currency in set(list(expected_balances.keys()) + list(saved_balances.keys())):
+                expected_val = round(expected_balances.get(currency, 0), 8)
+                saved_val = round(saved_balances.get(currency, 0), 8)
+                if abs(expected_val - saved_val) > 0.01:
+                    logger.warning(
+                        "Paper balance mismatch for %s: expected=%s, saved=%s. Using reconciled balance.",
+                        currency, expected_val, saved_val,
+                    )
+
+        self.trader.balances = expected_balances
+        logger.info("Reconciled paper balances from trade history: %s", expected_balances)
+
+        # Persist the reconciled balances so they are up-to-date on disk
+        save_paper_balances(self.trader.balances)
 
         # Populate the simulator's trade list so the web dashboard can show history
         self.trader.trades = list(self.trade_history)
@@ -3450,10 +3485,15 @@ class TradingEngine:
                             else:
                                 self.positions.pop(symbol, None)
                                 logger.info(f"Position fully closed by partial TP levels for {symbol}")
+                                if settings.TRADING_MODE == "paper":
+                                    await asyncio.to_thread(save_paper_balances, self.trader.balances)
                                 break
 
                             triggered.append(i)
                             pos["partial_tp_levels_triggered"] = triggered
+
+                            if settings.TRADING_MODE == "paper":
+                                await asyncio.to_thread(save_paper_balances, self.trader.balances)
 
                             if self.notifier:
                                 pnl_pct = (realized_pnl / prorated_cost_basis * 100) if prorated_cost_basis > 0 else 0.0
