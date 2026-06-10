@@ -1945,6 +1945,7 @@ class TradingEngine:
             ticker = self.ws_manager.get_ticker(symbol)
             if ticker is None:
                 ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+            current_price = ticker['last']
             # Relative strength vs BTC for this coin
             rel_strength_btc = None
             try:
@@ -2173,6 +2174,26 @@ class TradingEngine:
                     if tf_atr > 0:
                         atr_multi_tf[tf] = tf_atr
 
+            # ATR Percentile (volatility context)
+            atr_percentile = None
+            if atr is not None and atr > 0:
+                atr_percentile_key = f"atr_percentile:{symbol}"
+                try:
+                    stored_atr = await asyncio.to_thread(self.redis.get, atr_percentile_key)
+                    if stored_atr:
+                        atr_history = json.loads(stored_atr)
+                    else:
+                        atr_history = []
+                    atr_history.append(atr)
+                    atr_history = atr_history[-100:]
+                    await asyncio.to_thread(self.redis.setex, atr_percentile_key, 7 * 24 * 3600, json.dumps(atr_history))
+                    if len(atr_history) >= 5:
+                        sorted_atr = sorted(atr_history)
+                        rank = sum(1 for v in sorted_atr if v <= atr)
+                        atr_percentile = round(rank / len(sorted_atr) * 100, 1)
+                except Exception as e:
+                    logger.debug(f"ATR percentile computation failed for {symbol}: {e}")
+
             # --- Market regime classification (enhanced) ---
             market_regime = self._classify_market_regime(
                 adx=adx,
@@ -2383,26 +2404,6 @@ class TradingEngine:
                     avg_fill_price = total_cost_slip / total_base_slip
                     best_ask_price = asks[0][0]
                     estimated_slippage_pct = round((avg_fill_price - best_ask_price) / best_ask_price * 100, 4)
-
-            # ATR Percentile (volatility context)
-            atr_percentile = None
-            if atr is not None and atr > 0:
-                atr_percentile_key = f"atr_percentile:{symbol}"
-                try:
-                    stored_atr = await asyncio.to_thread(self.redis.get, atr_percentile_key)
-                    if stored_atr:
-                        atr_history = json.loads(stored_atr)
-                    else:
-                        atr_history = []
-                    atr_history.append(atr)
-                    atr_history = atr_history[-100:]
-                    await asyncio.to_thread(self.redis.setex, atr_percentile_key, 7 * 24 * 3600, json.dumps(atr_history))
-                    if len(atr_history) >= 5:
-                        sorted_atr = sorted(atr_history)
-                        rank = sum(1 for v in sorted_atr if v <= atr)
-                        atr_percentile = round(rank / len(sorted_atr) * 100, 1)
-                except Exception as e:
-                    logger.debug(f"ATR percentile computation failed for {symbol}: {e}")
 
             # Fee rate for this symbol
             fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
