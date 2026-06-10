@@ -1988,10 +1988,8 @@ class TradingEngine:
                 final_paused = final_paused_raw is not None and final_paused_raw == b"1"
 
                 if final_paused != was_paused:
-                    # State changed – notify with the current reason
-                    stored_reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
-                    stored_reason = stored_reason_raw.decode() if isinstance(stored_reason_raw, bytes) else (stored_reason_raw or "")
-                    display_reason = pause_reason if (pause_trading is True and pause_reason) else stored_reason
+                    # State changed – notify with the LLM's reason for the action
+                    display_reason = pause_reason if pause_reason else ""
                     reason_text = f" – {display_reason}" if display_reason else ""
 
                     if final_paused:
@@ -2252,6 +2250,12 @@ class TradingEngine:
                 if reason:
                     await asyncio.to_thread(self.redis.set, "trading:pause_reason", reason)
                 logger.info(f"LLM decided to keep trading paused. Reason: {reason}")
+                if self.notifier:
+                    reason_text = f" – {reason}" if reason else ""
+                    await self.notifier.send_notification(
+                        f"⏸️ LLM decided to keep trading paused{reason_text}",
+                        summary={"action": "PAUSE", "reason": f"LLM keep paused: {reason}" if reason else "LLM keep paused"}
+                    )
             else:
                 logger.warning(f"Invalid resume_trading value in LLM response: {resume_trading}")
 
