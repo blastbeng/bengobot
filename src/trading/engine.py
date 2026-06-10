@@ -99,6 +99,7 @@ class TradingEngine:
         self._market_breadth: Optional[Dict[str, Any]] = None
         self._risk_lock = asyncio.Lock()
         self._running = True
+        self._last_state_save = 0
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
@@ -110,6 +111,59 @@ class TradingEngine:
         self._running = False
         await self.ws_manager.stop()
         logger.info("Trading engine stopped.")
+
+    async def _periodic_reconcile(self):
+        """Run position reconciliation every 60 seconds."""
+        while self._running:
+            try:
+                await self._reconcile_positions()
+            except Exception as e:
+                logger.error(f"Reconcile error: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
+    async def _periodic_reevaluate(self):
+        """Re-evaluate coin selection periodically."""
+        while self._running:
+            try:
+                await self._reevaluate_coins()
+                # Update WebSocket subscriptions to match current coins
+                current_symbols = [entry["symbol"] for entry in self.current_coins]
+                await self.ws_manager.update_subscriptions(current_symbols)
+            except Exception as e:
+                logger.error(f"Coin re-evaluation error: {e}", exc_info=True)
+            await asyncio.sleep(self._coin_revaluation_interval)
+
+    async def _periodic_pause_check(self):
+        """Check and handle auto-resume from pause."""
+        while self._running:
+            try:
+                paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                if paused:
+                    pause_start_raw = await asyncio.to_thread(self.redis.get, "trading:pause_start")
+                    pause_duration_raw = await asyncio.to_thread(self.redis.get, "trading:pause_duration")
+                    if pause_start_raw and pause_duration_raw:
+                        try:
+                            pause_start = float(pause_start_raw)
+                            pause_duration = int(pause_duration_raw)
+                            if time.time() - pause_start >= pause_duration:
+                                logger.info("Pause duration elapsed – auto-resuming trading.")
+                                stored_reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
+                                stored_reason = stored_reason_raw.decode() if isinstance(stored_reason_raw, bytes) else (stored_reason_raw or "")
+                                await asyncio.to_thread(self.redis.delete, "trading:paused")
+                                await asyncio.to_thread(self.redis.delete, "trading:pause_start")
+                                await asyncio.to_thread(self.redis.delete, "trading:pause_duration")
+                                await asyncio.to_thread(self.redis.delete, "trading:pause_reason")
+                                if self.notifier:
+                                    reason_text = f" (was paused: {stored_reason})" if stored_reason else ""
+                                    await self.notifier.send_notification(
+                                        f"▶️ Trading auto-resumed after pause duration elapsed.{reason_text}",
+                                        summary={"action": "INFO", "reason": f"Pause duration elapsed{reason_text}"}
+                                    )
+                        except (ValueError, TypeError):
+                            pass  # ignore malformed values
+            except Exception as e:
+                logger.error(f"Pause check error: {e}", exc_info=True)
+            await asyncio.sleep(30)
 
     def _get_sentiment_str(self, symbol: str) -> str:
         """Get a short news sentiment string for notifications, including an LLM summary."""
@@ -853,96 +907,34 @@ class TradingEngine:
                      len(self.current_coins), len(self.positions), len(self.trade_history))
 
     async def run(self):
-        """Main loop that runs forever."""
+        """Main event‑driven loop using WebSocket ticker updates."""
         logger.info("Trading engine started.")
         await self.ws_manager.start()
         logger.info("WebSocket manager started.")
-        # Start background news refresh task
+
+        # Start background tasks
         asyncio.create_task(self._refresh_news_cache())
         asyncio.create_task(self._refresh_current_coins_news_fast())
-        # Start background market data download task
         asyncio.create_task(self._download_market_data_loop())
         asyncio.create_task(self._risk_management_loop())
+        asyncio.create_task(self._periodic_reconcile())
+        asyncio.create_task(self._periodic_reevaluate())
+        asyncio.create_task(self._periodic_pause_check())
+
+        # Initial coin selection and subscription update
+        await self._reevaluate_coins()
+        current_symbols = [entry["symbol"] for entry in self.current_coins]
+        await self.ws_manager.update_subscriptions(current_symbols)
+
         while self._running:
             try:
-                await self._reconcile_positions()
+                # Wait for a ticker update (or timeout after 1s to allow checking health)
+                if self.ws_manager.healthy:
+                    update = await self.ws_manager.wait_for_update(timeout=1.0)
+                else:
+                    await asyncio.sleep(1.0)
 
-                paused = await asyncio.to_thread(self.redis.get, "trading:paused")
-                if paused:
-                    # Check if a pause duration was set and has elapsed
-                    pause_start_raw = await asyncio.to_thread(self.redis.get, "trading:pause_start")
-                    pause_duration_raw = await asyncio.to_thread(self.redis.get, "trading:pause_duration")
-                    if pause_start_raw and pause_duration_raw:
-                        try:
-                            pause_start = float(pause_start_raw)
-                            pause_duration = int(pause_duration_raw)
-                            if time.time() - pause_start >= pause_duration:
-                                logger.info("Pause duration elapsed – auto-resuming trading.")
-                                stored_reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
-                                stored_reason = stored_reason_raw.decode() if isinstance(stored_reason_raw, bytes) else (stored_reason_raw or "")
-                                await asyncio.to_thread(self.redis.delete, "trading:paused")
-                                await asyncio.to_thread(self.redis.delete, "trading:pause_start")
-                                await asyncio.to_thread(self.redis.delete, "trading:pause_duration")
-                                await asyncio.to_thread(self.redis.delete, "trading:pause_reason")
-                                if self.notifier:
-                                    reason_text = f" (was paused: {stored_reason})" if stored_reason else ""
-                                    await self.notifier.send_notification(
-                                        f"▶️ Trading auto-resumed after pause duration elapsed.{reason_text}",
-                                        summary={"action": "INFO", "reason": f"Pause duration elapsed{reason_text}"}
-                                    )
-                                paused = False  # continue to normal processing below
-                        except (ValueError, TypeError):
-                            pass  # ignore malformed values
-                if paused:
-                    logger.info("Trading is paused. Only managing open positions.")
-                    # Allow the LLM to re-evaluate coins – it may resume trading here
-                    await self._reevaluate_coins()
-                    now = time.time()
-                    for coin_entry in self.current_coins:
-                        symbol = coin_entry["symbol"]
-                        if symbol in self.positions:
-                            default_interval = self._timeframe_to_seconds(coin_entry["timeframe"])
-                            interval = self._strategy_intervals.get(symbol, default_interval)
-                            last_eval = self._last_strategy_eval.get(symbol, 0)
-                            if now - last_eval >= interval:
-                                await self._process_coin(coin_entry, trading_paused=True)
-                                self._last_strategy_eval[symbol] = now
-                    await self._save_state()
-                    # Sleep until next evaluation for any position coin
-                    next_times = []
-                    for coin_entry in self.current_coins:
-                        symbol = coin_entry["symbol"]
-                        if symbol in self.positions:
-                            default_interval = self._timeframe_to_seconds(coin_entry["timeframe"])
-                            interval = self._strategy_intervals.get(symbol, default_interval)
-                            last_eval = self._last_strategy_eval.get(symbol, 0)
-                            next_times.append(last_eval + interval)
-                    if next_times:
-                        earliest = min(next_times)
-                        sleep_seconds = max(1.0, earliest - now)
-                    else:
-                        sleep_seconds = DEFAULT_STRATEGY_INTERVAL
-                    await asyncio.sleep(sleep_seconds)
-                    continue
-
-                # Periodic state debug log
-                try:
-                    bal = await asyncio.to_thread(self.trader.fetch_balance)
-                    base_bal = bal.get(self.base_currency, 0.0)
-                    logger.info(
-                        f"Engine state: coins={len(self.current_coins)}, "
-                        f"positions={len(self.positions)}, "
-                        f"{self.base_currency}_balance={base_bal:.2f}, "
-                        f"effective_max_coins={self.effective_max_coins}"
-                    )
-                except Exception:
-                    logger.debug("Could not fetch balance for debug log")
-
-                await self._reevaluate_coins()
-                # Update WebSocket subscriptions to match current coins
-                current_symbols = [entry["symbol"] for entry in self.current_coins]
-                await self.ws_manager.update_subscriptions(current_symbols)
-                self._cycle_spent = 0.0
+                # Process any coin whose evaluation interval has elapsed
                 now = time.time()
                 for coin_entry in self.current_coins:
                     symbol = coin_entry["symbol"]
@@ -950,29 +942,20 @@ class TradingEngine:
                     interval = self._strategy_intervals.get(symbol, default_interval)
                     last_eval = self._last_strategy_eval.get(symbol, 0)
                     if now - last_eval >= interval:
-                        await self._process_coin(coin_entry)
+                        # Check if trading is paused (skip BUY signals)
+                        paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                        trading_paused = paused is not None and paused == b"1"
+                        await self._process_coin(coin_entry, trading_paused=trading_paused)
                         self._last_strategy_eval[symbol] = now
-                await self._save_state()
+
+                # Save state periodically (every 30 seconds)
+                if now - self._last_state_save > 30:
+                    await self._save_state()
+                    self._last_state_save = now
+
             except Exception as e:
                 logger.error(f"Engine loop error: {e}", exc_info=True)
-            # --- Dynamic sleep: wait until the next coin needs evaluation ---
-            now = time.time()
-            next_times = []
-            for coin_entry in self.current_coins:
-                symbol = coin_entry["symbol"]
-                default_interval = self._timeframe_to_seconds(coin_entry["timeframe"])
-                interval = self._strategy_intervals.get(symbol, default_interval)
-                last_eval = self._last_strategy_eval.get(symbol, 0)
-                next_times.append(last_eval + interval)
-            if next_times:
-                earliest = min(next_times)
-                sleep_seconds = max(1.0, earliest - now)
-            else:
-                sleep_seconds = DEFAULT_STRATEGY_INTERVAL
-            # Ensure the loop wakes up at least every hour to check pause/resume
-            sleep_seconds = min(sleep_seconds, 3600)
-            logger.debug(f"Sleeping for {sleep_seconds:.1f}s until next evaluation.")
-            await asyncio.sleep(sleep_seconds)
+                await asyncio.sleep(5)
 
     async def _reevaluate_coins(self):
         """Use LLM to select which coins to trade."""
