@@ -1654,15 +1654,12 @@ class TradingEngine:
         response = None
         for attempt in range(max_retries + 1):
             try:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        get_cached_llm_response,
-                        prompt,
-                        SYSTEM_PROMPT,
-                        300,
-                        market_hash=market_hash,
-                    ),
-                    timeout=60.0,
+                response = await asyncio.to_thread(
+                    get_cached_llm_response,
+                    prompt,
+                    SYSTEM_PROMPT,
+                    300,
+                    market_hash=market_hash,
                 )
                 break  # success
             except asyncio.TimeoutError:
@@ -1699,9 +1696,8 @@ class TradingEngine:
                     "Here is the original request:\n\n" + prompt
                 )
                 try:
-                    response = await asyncio.wait_for(
-                        asyncio.to_thread(get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 120),
-                        timeout=60.0
+                    response = await asyncio.to_thread(
+                        get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 120
                     )
                     json.loads(response)  # validate the retry response
                 except Exception as e:
@@ -2757,15 +2753,12 @@ class TradingEngine:
             }
             market_hash = compute_market_hash(market_snapshot)
             try:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        get_cached_llm_response,
-                        prompt,
-                        SYSTEM_PROMPT,
-                        60,
-                        market_hash=market_hash,
-                    ),
-                    timeout=120.0,
+                response = await asyncio.to_thread(
+                    get_cached_llm_response,
+                    prompt,
+                    SYSTEM_PROMPT,
+                    60,
+                    market_hash=market_hash,
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"LLM strategy call timed out for {symbol}. Skipping this cycle.")
@@ -2789,9 +2782,8 @@ class TradingEngine:
                     "Here is the original request:\n\n" + prompt
                 )
                 try:
-                    response2 = await asyncio.wait_for(
-                        asyncio.to_thread(get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 30),
-                        timeout=60.0
+                    response2 = await asyncio.to_thread(
+                        get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 30
                     )
                     strategy = create_strategy_from_llm(response2)
                 except Exception as e2:
@@ -2827,14 +2819,11 @@ class TradingEngine:
                         "All other market data remains the same."
                     )
                     try:
-                        corrected_response = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                get_cached_llm_response,
-                                correction_prompt,
-                                SYSTEM_PROMPT,
-                                30,
-                            ),
-                            timeout=60.0,
+                        corrected_response = await asyncio.to_thread(
+                            get_cached_llm_response,
+                            correction_prompt,
+                            SYSTEM_PROMPT,
+                            30,
                         )
                         corrected_signal = create_strategy_from_llm(corrected_response).generate_signal({})
                         validated = validate_signal(

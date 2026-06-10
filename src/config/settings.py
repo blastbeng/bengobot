@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     EXCHANGE_API_KEY: Optional[str] = None
     EXCHANGE_SECRET: Optional[str] = None
     EXCHANGE_PASSWORD: Optional[str] = None
+    EXCHANGE_TIMEOUT: int = 30000  # milliseconds – timeout for all exchange API calls
 
     # Trading mode
     TRADING_MODE: str = "paper"   # "paper" or "live"

@@ -28,6 +28,7 @@ def get_exchange() -> ccxt.Exchange:
             config["password"] = settings.EXCHANGE_PASSWORD
 
     exchange = exchange_class(config)
+    exchange.timeout = settings.EXCHANGE_TIMEOUT
 
     if settings.TRADING_MODE == "paper":
         # Enable sandbox mode only if the exchange truly supports it
@@ -57,6 +58,7 @@ def get_pro_exchange() -> ccxt_pro.Exchange:
             config["password"] = settings.EXCHANGE_PASSWORD
 
     exchange = exchange_class(config)
+    exchange.timeout = settings.EXCHANGE_TIMEOUT
 
     if settings.TRADING_MODE == "paper":
         if exchange.has.get("sandbox", False):
