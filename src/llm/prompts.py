@@ -482,6 +482,27 @@ def compute_bollinger_bands(
     return upper, middle, lower
 
 
+def _summarize_ohlcv(candles: List[List]) -> Optional[Dict[str, Any]]:
+    """Return a compact summary of OHLCV candles."""
+    if not candles:
+        return None
+    open_price = candles[0][1]
+    close_price = candles[-1][4]
+    high = max(c[2] for c in candles)
+    low = min(c[3] for c in candles)
+    volume = sum(c[5] for c in candles)
+    change_pct = ((close_price - open_price) / open_price) * 100 if open_price else 0.0
+    return {
+        "change_pct": round(change_pct, 2),
+        "high": high,
+        "low": low,
+        "volume": volume,
+        "candle_count": len(candles),
+        "start_time": candles[0][0],
+        "end_time": candles[-1][0],
+    }
+
+
 def _format_news_for_prompt(articles: list) -> str:
     """Format a list of news articles into a compact string for the LLM prompt."""
     if not articles:
@@ -1449,16 +1470,21 @@ Maximum coins to trade: {max_coins}
         prompt += f"Current position unrealized P&L: {unrealized_pnl:.2f} {symbol.split('/')[1]}\n"
         prompt += f"Position details: entry price {position_info.get('price')}, amount {position_info.get('amount')}\n"
 
-    # --- Multi-timeframe raw OHLCV and indicators ---
+    # --- Multi-timeframe OHLCV summary and indicators ---
     if multi_tf_raw_candles:
-        prompt += "\nMulti-timeframe raw OHLCV data (each candle: [timestamp, open, high, low, close, volume]):\n"
+        prompt += "\nMulti-timeframe OHLCV summary (price change %, high, low, volume, candle count):\n"
         for tf in settings.OHLCV_TIMEFRAMES:
             if tf in multi_tf_raw_candles:
-                candles = multi_tf_raw_candles[tf]
-                prompt += f"\n{tf} timeframe ({len(candles)} candles):\n{json.dumps(candles)}\n"
+                summary = _summarize_ohlcv(multi_tf_raw_candles[tf])
+                if summary:
+                    prompt += (
+                        f"  [{tf}] change={summary['change_pct']}%, "
+                        f"high={summary['high']}, low={summary['low']}, "
+                        f"volume={summary['volume']}, candles={summary['candle_count']}\n"
+                    )
         prompt += (
-            "Use the raw candles from all timeframes to assess short‑term momentum, support/resistance, "
-            "and overall trend. The lower timeframes (5m, 15m) are ideal for timing scalping entries and exits; "
+            "Use these summaries to assess short‑term momentum and trend across timeframes. "
+            "The lower timeframes (5m, 15m) are ideal for timing scalping entries and exits; "
             "the higher timeframes (1h, 4h) show the larger trend.\n"
         )
     if multi_tf_indicators:
@@ -1500,29 +1526,30 @@ Maximum coins to trade: {max_coins}
             "while ensuring the 1h/4h trend supports the direction.\n"
         )
     elif raw_candles:
-        prompt += f"\nRaw OHLCV data for {assigned_timeframe} timeframe (each candle: [timestamp, open, high, low, close, volume]):\n{json.dumps(raw_candles)}\n"
-        prompt += (
-            "The technical indicators (RSI, MACD, Bollinger Bands, EMA) have already been computed for you from this data. "
-            "Use them together with the raw candles to time entries and exits. "
-            "Explain in your reasoning how the indicators support your decision.\n"
-        )
+        summary = _summarize_ohlcv(raw_candles)
+        if summary:
+            prompt += (
+                f"\nOHLCV summary for {assigned_timeframe} timeframe: "
+                f"change={summary['change_pct']}%, high={summary['high']}, low={summary['low']}, "
+                f"volume={summary['volume']}, candles={summary['candle_count']}\n"
+            )
+            prompt += (
+                "The technical indicators (RSI, MACD, Bollinger Bands, EMA) have already been computed for you from this data. "
+                "Use them together with the summary to time entries and exits. "
+                "Explain in your reasoning how the indicators support your decision.\n"
+            )
     if historical_ohlcv:
-        # Limit to last 500 candles to keep prompt size manageable
-        limited_hist = historical_ohlcv[-500:] if len(historical_ohlcv) > 500 else historical_ohlcv
-        prompt += f"\nHistorical OHLCV data for the last {len(limited_hist)} candles ({assigned_timeframe} timeframe):\n{json.dumps(limited_hist)}\n"
-        prompt += (
-            "You have been provided with historical OHLCV data covering up to the last 30 days (or the available period). "
-            "Use this data to perform a backtest analysis: simulate potential trades based on your strategy, evaluate profitability, "
-            "and use the insights to inform your current decision. You may choose a subset of this period for your backtest "
-            "(default is the full period). Explain in your reasoning how the backtest results influenced your decision.\n"
-            "Include a 'backtest_summary' field in your JSON output with a short summary of the backtest results.\n"
-        )
-        prompt += (
-            "Your backtest analysis must directly influence your current decision. "
-            "If the backtest shows poor performance for your intended strategy, adjust your parameters "
-            "(e.g., wider stop, smaller position, different entry timing) or output HOLD. "
-            "Explain in your reasoning how the backtest results affected your choices.\n"
-        )
+        summary = _summarize_ohlcv(historical_ohlcv)
+        if summary:
+            prompt += (
+                f"\nHistorical OHLCV summary (up to 30 days, {assigned_timeframe} timeframe): "
+                f"change={summary['change_pct']}%, high={summary['high']}, low={summary['low']}, "
+                f"volume={summary['volume']}, candles={summary['candle_count']}\n"
+            )
+            prompt += (
+                "Use this longer‑term summary to assess the overall trend and avoid coins in prolonged decline. "
+                "Prefer coins with consistent upward momentum over the full period.\n"
+            )
     if drawdown_pct is not None:
         prompt += f"Current account drawdown: {drawdown_pct}%\n"
     if recent_trades:
