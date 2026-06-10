@@ -10,7 +10,8 @@ from typing import Dict, List, Optional, Any
 
 from src.config.settings import settings
 from src.exchanges.fees import get_fee_rate
-from src.exchanges.factory import get_exchange
+from src.exchanges.factory import get_exchange, get_pro_exchange
+from src.exchanges.ws_manager import WebSocketManager
 from src.exchanges.market_data import get_available_pairs, get_tickers, get_order_book, get_multi_timeframe_ohlcv
 from src.trading.paper_simulator import PaperSimulator
 from src.trading.live_trader import LiveTrader
@@ -57,6 +58,8 @@ DEFAULT_STRATEGY_INTERVAL = 600   # fallback when no timeframe or no coins (10 m
 class TradingEngine:
     def __init__(self):
         self.exchange = get_exchange()
+        self.pro_exchange = get_pro_exchange()
+        self.ws_manager = WebSocketManager(self.pro_exchange, [])
         self.base_currency = settings.BASE_CURRENCY
         self.max_coins = settings.MAX_COINS
         self.effective_max_coins = self.max_coins
@@ -838,6 +841,8 @@ class TradingEngine:
     async def run(self):
         """Main loop that runs forever."""
         logger.info("Trading engine started.")
+        await self.ws_manager.start()
+        logger.info("WebSocket manager started.")
         # Start background news refresh task
         asyncio.create_task(self._refresh_news_cache())
         asyncio.create_task(self._refresh_current_coins_news_fast())
@@ -920,6 +925,9 @@ class TradingEngine:
                     logger.debug("Could not fetch balance for debug log")
 
                 await self._reevaluate_coins()
+                # Update WebSocket subscriptions to match current coins
+                current_symbols = [entry["symbol"] for entry in self.current_coins]
+                await self.ws_manager.update_subscriptions(current_symbols)
                 self._cycle_spent = 0.0
                 now = time.time()
                 for coin_entry in self.current_coins:
@@ -3058,7 +3066,9 @@ class TradingEngine:
                 if pos.get("stop_loss") is None or pos.get("take_profit") is None:
                     continue
 
-                ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+                ticker = self.ws_manager.get_ticker(symbol)
+                if ticker is None:
+                    continue  # no real-time data yet, skip this check
                 current_price = ticker['last']
 
 
