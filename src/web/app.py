@@ -117,13 +117,29 @@ def history(limit: int = 50):
 @app.post("/api/pause")
 def pause():
     engine = get_engine()
-    engine.redis.set("trading:paused", "1")
+    redis = engine.redis
+    redis.set("trading:paused", "1")
+    redis.set("trading:pause_source", "manual")
+    redis.delete("trading:pause_start")
+    redis.delete("trading:pause_duration")
+    redis.delete("trading:pause_reason")
+    redis.delete("trading:llm_pause_time")
     return {"status": "paused"}
 
 @app.post("/api/resume")
 def resume():
     engine = get_engine()
-    engine.redis.delete("trading:paused")
+    redis = engine.redis
+    keys = [
+        "trading:paused",
+        "trading:pause_source",
+        "trading:pause_start",
+        "trading:pause_duration",
+        "trading:pause_reason",
+        "trading:llm_pause_time",
+    ]
+    for key in keys:
+        redis.delete(key)
     return {"status": "resumed"}
 
 @app.post("/api/sell")

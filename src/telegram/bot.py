@@ -120,12 +120,28 @@ class TelegramBot:
         if not self._is_authorized(update):
             return
         await asyncio.to_thread(self.redis.set, "trading:paused", "1")
+        await asyncio.to_thread(self.redis.set, "trading:pause_source", "manual")
+        # Remove any leftover LLM pause keys to avoid confusion
+        await asyncio.to_thread(self.redis.delete, "trading:pause_start")
+        await asyncio.to_thread(self.redis.delete, "trading:pause_duration")
+        await asyncio.to_thread(self.redis.delete, "trading:pause_reason")
+        await asyncio.to_thread(self.redis.delete, "trading:llm_pause_time")
         await update.message.reply_text("Trading paused.", reply_markup=self.keyboard)
 
     async def cmd_resume(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
             return
-        await asyncio.to_thread(self.redis.delete, "trading:paused")
+        # Delete all pause-related keys
+        keys = [
+            "trading:paused",
+            "trading:pause_source",
+            "trading:pause_start",
+            "trading:pause_duration",
+            "trading:pause_reason",
+            "trading:llm_pause_time",
+        ]
+        for key in keys:
+            await asyncio.to_thread(self.redis.delete, key)
         await update.message.reply_text("Trading resumed.", reply_markup=self.keyboard)
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
