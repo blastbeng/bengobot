@@ -364,6 +364,9 @@ class TelegramBot:
         if data.get("market_breadth"):
             mb = data["market_breadth"]
             msg += f"<b>📊 Market Breadth:</b> {mb['positive_pct']}% positive ({mb['positive_count']}/{mb['total_count']})\n"
+        if data.get("full_market_breadth"):
+            fmb = data["full_market_breadth"]
+            msg += f"<b>🌐 Full Market Breadth:</b> {fmb['positive_pct']}% positive ({fmb['positive_count']}/{fmb['total_count']})\n"
         if data.get("btc_dominance") is not None:
             msg += f"<b>₿ BTC Dominance:</b> {data['btc_dominance']:.2f}%\n"
         if data.get("global_market"):

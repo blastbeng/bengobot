@@ -115,6 +115,7 @@ class TradingEngine:
         self._news_cache_running = False
         self._news_fast_running = False
         self._market_data_running = False
+        self._full_breadth_running = False
 
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
@@ -200,6 +201,45 @@ class TradingEngine:
             finally:
                 self._pause_check_running = False
             await asyncio.sleep(30)
+
+    async def _periodic_full_market_breadth(self):
+        """Periodically compute market breadth over all available pairs."""
+        await asyncio.sleep(60)  # initial delay
+        while self._running:
+            if self._full_breadth_running:
+                logger.warning("Full market breadth computation still running; skipping this cycle.")
+                await asyncio.sleep(300)
+                continue
+            self._full_breadth_running = True
+            try:
+                available_pairs = await asyncio.to_thread(
+                    get_available_pairs, self.exchange, self.base_currency
+                )
+                if available_pairs:
+                    # Limit to 500 pairs to avoid excessive API calls
+                    breadth_pairs = available_pairs[:500]
+                    breadth_tickers = await asyncio.to_thread(
+                        get_tickers, self.exchange, breadth_pairs
+                    )
+                    positive_count = sum(
+                        1 for sym in breadth_pairs
+                        if (breadth_tickers.get(sym, {}).get('percentage') or 0) > 0
+                    )
+                    total_count = len(breadth_pairs)
+                    full_market_breadth = {
+                        "positive_pct": round(positive_count / total_count * 100, 1) if total_count > 0 else 0.0,
+                        "positive_count": positive_count,
+                        "total_count": total_count,
+                    }
+                    await asyncio.to_thread(
+                        self.redis.setex, "market:breadth:full", 600, json.dumps(full_market_breadth)
+                    )
+                    logger.debug(f"Full market breadth updated: {full_market_breadth}")
+            except Exception as e:
+                logger.error(f"Full market breadth computation error: {e}", exc_info=True)
+            finally:
+                self._full_breadth_running = False
+            await asyncio.sleep(300)  # every 5 minutes
 
     def _get_sentiment_str(self, symbol: str) -> str:
         """Get a short news sentiment string for notifications, including an LLM summary."""
@@ -1123,6 +1163,7 @@ class TradingEngine:
         asyncio.create_task(self._periodic_reconcile())
         asyncio.create_task(self._periodic_reevaluate())
         asyncio.create_task(self._periodic_pause_check())
+        asyncio.create_task(self._periodic_full_market_breadth())
 
         # Initial coin selection and subscription update
         await self._reevaluate_coins()
@@ -1557,12 +1598,22 @@ class TradingEngine:
         }
         self._market_breadth = market_breadth
 
+        # Read full market breadth from Redis (computed by background task)
+        full_market_breadth = None
+        try:
+            full_breadth_raw = await asyncio.to_thread(self.redis.get, "market:breadth:full")
+            if full_breadth_raw:
+                full_market_breadth = json.loads(full_breadth_raw)
+        except Exception:
+            pass
+
         # Store market status in Redis for the web dashboard
         market_status = {
             "fear_greed": fear_greed,
             "global_market": global_market,
             "altcoin_season": altcoin_season,
             "market_breadth": market_breadth,
+            "full_market_breadth": full_market_breadth,
             "btc_dominance": global_market.get("btc_dominance") if global_market else None,
             "total_market_cap": global_market,
             "timestamp": time.time(),
