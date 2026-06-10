@@ -49,6 +49,17 @@ class Settings(BaseSettings):
             raise ValueError("COIN_SELECTION_TOP_VOLUME_LIMIT must be at least 1")
         return v
 
+    # Fallback coin selection: minimum 24h quote volume (in base currency) required
+    # for a coin to be considered when the LLM returns no coins.
+    # Set to 0 to disable the filter.
+    FALLBACK_MIN_24H_VOLUME: float = 0.0
+
+    @field_validator("FALLBACK_MIN_24H_VOLUME")
+    @classmethod
+    def validate_fallback_min_24h_volume(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("FALLBACK_MIN_24H_VOLUME must be >= 0")
+        return v
 
     # OHLCV timeframes for multi-timeframe analysis
     OHLCV_TIMEFRAMES: list[str] = ["5m", "15m", "1h", "4h"]

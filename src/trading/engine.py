@@ -1679,6 +1679,11 @@ class TradingEngine:
             fallback_coins: List[Dict[str, str]] = []
             default_tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
             for sym in sorted_pairs:
+                # Apply minimum 24h volume filter if configured
+                if settings.FALLBACK_MIN_24H_VOLUME > 0:
+                    vol = _volume(sym)
+                    if vol < settings.FALLBACK_MIN_24H_VOLUME:
+                        continue
                 min_cost = market_limits.get(sym, {}).get('min_cost', 0)
                 if per_coin_budget >= min_cost:
                     fallback_coins.append({"symbol": sym, "timeframe": default_tf})
