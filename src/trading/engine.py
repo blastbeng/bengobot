@@ -77,6 +77,7 @@ class TradingEngine:
                 base_currency=self.base_currency,
                 initial_balance=settings.PAPER_INITIAL_BALANCE,
                 redis_client=self.redis,
+                ws_manager=self.ws_manager,
             )
         else:
             self.trader = LiveTrader(self.exchange)

@@ -19,17 +19,31 @@ class PaperSimulator:
         initial_balance: float = 10000.0,
         fee_rate: float = 0.001,  # 0.1% fee
         redis_client=None,
+        ws_manager=None,
     ):
         self.exchange = exchange
         self.base_currency = base_currency
         self.fee_rate = fee_rate
         self.redis_client = redis_client
+        self.ws_manager = ws_manager
         self.balances: Dict[str, float] = {base_currency: initial_balance}
         self.orders: List[Dict[str, Any]] = []
         self.trades: List[Dict[str, Any]] = []
 
     def _get_price(self, symbol: str) -> float:
-        """Get current mid price for a symbol from the real exchange."""
+        """Get current mid price for a symbol, preferring live WebSocket data."""
+        # Try WebSocket ticker first
+        if self.ws_manager is not None:
+            ws_ticker = self.ws_manager.get_ticker(symbol)
+            if ws_ticker is not None:
+                bid = ws_ticker.get('bid')
+                ask = ws_ticker.get('ask')
+                last = ws_ticker.get('last')
+                if bid is not None and ask is not None:
+                    return (bid + ask) / 2
+                if last is not None:
+                    return last
+        # Fallback to REST
         ticker = self.exchange.fetch_ticker(symbol)
         return (ticker['bid'] + ticker['ask']) / 2 if ticker['bid'] and ticker['ask'] else ticker['last']
 
