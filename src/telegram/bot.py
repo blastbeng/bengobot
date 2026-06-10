@@ -309,7 +309,7 @@ class TelegramBot:
             await update.message.reply_text(f"No recent news for {coin}.", reply_markup=self.keyboard)
             return
 
-        formatted = _format_news_for_prompt(articles)
+        formatted = await asyncio.to_thread(_format_news_for_prompt, articles)
         msg = f"*{coin}*\n{formatted}"
         # Send as plain text to avoid Markdown parsing errors
         await update.message.reply_text(msg, parse_mode=None, reply_markup=self.keyboard)
@@ -402,7 +402,7 @@ class TelegramBot:
                     summary = "No recent news."
                 else:
                     try:
-                        formatted = _format_news_for_prompt(articles)
+                        formatted = await asyncio.to_thread(_format_news_for_prompt, articles)
                         prompt = (
                             f"Here are recent news headlines and summaries for {base_coin}:\n\n"
                             f"{formatted}\n\n"
