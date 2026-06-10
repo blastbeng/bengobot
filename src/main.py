@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import signal
+import sys
 import uvicorn
 from src.web.app import app
 from src.config.settings import settings
 from src.database import init_db, get_telegram_chat_id, set_telegram_chat_id
-from src.utils.redis_client import get_redis_client
+from src.utils.redis_client import get_redis_client, check_redis_connection
 from src.trading.engine import TradingEngine
 from src.news.fetcher import test_rss_feeds
 
@@ -13,6 +14,10 @@ logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+if not check_redis_connection():
+    logging.critical("Redis is not reachable. Exiting.")
+    sys.exit(1)
 
 def _seed_telegram_chat_id():
     """If TELEGRAM_CHAT_ID is set in env and no chat_id is stored, store it."""
