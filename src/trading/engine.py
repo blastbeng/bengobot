@@ -50,7 +50,7 @@ from src.database import load_trading_state, save_trading_state, delete_trading_
 
 logger = logging.getLogger(__name__)
 
-COIN_REVALUATION_INTERVAL = 3600  # seconds (1 hour)
+COIN_REVALUATION_INTERVAL = 900  # seconds (15 minutes)
 DEFAULT_STRATEGY_INTERVAL = 600   # fallback when no timeframe or no coins (10 minutes)
 
 
