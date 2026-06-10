@@ -1912,7 +1912,7 @@ class TradingEngine:
                                                         f"({MIN_LLM_PAUSE_DURATION}s) not yet elapsed "
                                                         f"({remaining:.0f}s remaining).",
                                                         summary={
-                                                            "action": "INFO",
+                                                            "action": "RESUME",
                                                             "reason": f"LLM resume blocked by minimum pause duration ({MIN_LLM_PAUSE_DURATION}s)",
                                                         }
                                                     )
