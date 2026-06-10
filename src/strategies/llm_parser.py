@@ -7,7 +7,7 @@ def parse_llm_response(response_text: str) -> Signal:
     """
     Parse the LLM's JSON response into a Signal.
     Supports JSON wrapped in ```json ... ``` code blocks or raw JSON.
-    If parsing fails, returns a HOLD signal with zero confidence.
+    Raises ValueError if the response cannot be parsed as valid JSON.
     """
     try:
         # Try to extract JSON from a markdown code block first
@@ -68,8 +68,8 @@ def parse_llm_response(response_text: str) -> Signal:
             max_hold_minutes=max_hold_minutes,
             reason=reason,
         )
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response")
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        raise ValueError(f"Failed to parse LLM response as valid JSON: {e}") from e
 
 
 def create_strategy_from_llm(response_text: str) -> LLMStrategy:

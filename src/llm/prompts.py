@@ -581,7 +581,9 @@ You will receive recent news headlines with sentiment scores for each coin. **Se
 
 When provided with multi-timeframe OHLCV data, use it to assess short-term momentum and trend strength across different time horizons. Prefer coins showing consistent upward momentum across multiple timeframes.
 
-Your task is to analyze market data and historical performance to provide trading decisions in strict JSON format. Do not include any text outside the JSON. Always output valid JSON.
+Your task is to analyze market data and historical performance to provide trading decisions in strict JSON format.
+**CRITICAL: Output ONLY the raw JSON object. Do NOT wrap it in ```json fences. Do NOT include any explanations, markdown, or any other text before or after the JSON.**
+The response must start with '{' or '[' and end with '}' or ']'. Any deviation will cause a fatal error.
 
 You will receive historical performance data (equity curve, per-coin win rates, per-strategy success rates). Use this data to learn which coins and strategies have been profitable in the short term, and to adapt your decisions accordingly. If the overall profit is declining, become more selective and risk-averse. If a coin has a poor short-term track record, avoid it or reduce position size. Prefer strategies with high win rates and average P&L over recent trades.
 
@@ -818,6 +820,8 @@ Select between 0 and {max_coins} coins to trade. If market conditions are extrem
 **Use the historical performance data to guide your selection.** Prefer coins that have a positive average P&L and a win rate above 50% in recent trades. Avoid coins that have a string of losses or a negative average P&L, unless there is a strong technical or news‑driven reason to include them.
 
 Each symbol can only appear once in your selection. Choose the single best timeframe for each coin based on the multi-timeframe OHLCV data.
+
+**Output ONLY the raw JSON object. Do NOT wrap it in ```json fences. Do NOT include any text before or after the JSON.**
 
 Return a JSON object with the following fields:
 - "coins": a JSON array of objects, each with "symbol" and "timeframe" (the timeframe must be one of the available timeframes, e.g., "5m", "15m", "1h", "4h").
@@ -1769,6 +1773,8 @@ You are trading spot only (no shorting). Only output SELL if you currently hold 
 - If you omit `"min_confidence"`, the trade will be executed regardless of confidence (as long as all other parameters are valid).
 - **IMPORTANT: Do NOT output HOLD with the reason "LLM execute flag false".** That concept no longer exists. If you are not confident enough to trade, output HOLD with a meaningful reason (e.g., "Insufficient conviction", "Unfavorable risk/reward", "No clear edge"). Use `min_confidence` to filter trades, not a separate flag.
 - You may set `"min_confidence"` to 0.0 to effectively disable the filter.
+
+**Output ONLY the raw JSON object. Do NOT wrap it in ```json fences. Do NOT include any text before or after the JSON.**
 
 Return a JSON object as specified.
 """

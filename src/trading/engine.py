@@ -43,7 +43,7 @@ try:
 except ImportError:
     discover_trending_coins = None
 from src.strategies.base import Signal
-from src.strategies.llm_parser import create_strategy_from_llm
+from src.strategies.llm_parser import create_strategy_from_llm, LLMStrategy
 from src.strategies.validator import validate_signal
 from src.utils.redis_client import get_redis_client
 from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance, store_news_articles, get_aggregate_sentiment_from_db, get_news_for_symbol, get_ohlcv, get_latest_ohlcv_timestamp, insert_ohlcv_batch
@@ -1511,6 +1511,27 @@ class TradingEngine:
             response = None  # will trigger the fallback path below
         logger.info(f"LLM coin selection raw response: {response}")
 
+        # Retry JSON parsing if the first attempt fails
+        if response is not None:
+            try:
+                json.loads(response)  # validate
+            except json.JSONDecodeError:
+                logger.warning("LLM coin selection response was not valid JSON. Retrying with correction prompt.")
+                correction_prompt = (
+                    "Your previous response was not valid JSON. "
+                    "You MUST output ONLY a single JSON object, with no markdown fences, no explanations, no extra text. "
+                    "Here is the original request:\n\n" + prompt
+                )
+                try:
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 120),
+                        timeout=60.0
+                    )
+                    json.loads(response)  # validate the retry response
+                except Exception as e:
+                    logger.error(f"LLM coin selection still invalid after retry: {e}")
+                    response = None
+
         if response is not None:
             try:
                 parsed = json.loads(response)
@@ -2469,7 +2490,24 @@ class TradingEngine:
                         }
                     )
                 return
-            strategy = create_strategy_from_llm(response)
+            try:
+                strategy = create_strategy_from_llm(response)
+            except ValueError as e:
+                logger.warning(f"LLM response parse failed for {symbol}: {e}. Retrying with correction prompt.")
+                correction_prompt = (
+                    "Your previous response was not valid JSON. "
+                    "You MUST output ONLY a single JSON object, with no markdown fences, no explanations, no extra text. "
+                    "Here is the original request:\n\n" + prompt
+                )
+                try:
+                    response2 = await asyncio.wait_for(
+                        asyncio.to_thread(get_cached_llm_response, correction_prompt, SYSTEM_PROMPT, 30),
+                        timeout=60.0
+                    )
+                    strategy = create_strategy_from_llm(response2)
+                except Exception as e2:
+                    logger.error(f"LLM response still invalid after retry for {symbol}: {e2}")
+                    strategy = LLMStrategy(Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response after retry"))
             signal = strategy.generate_signal({})
             current_price = ticker['last']
             validated = validate_signal(
