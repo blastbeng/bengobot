@@ -163,10 +163,16 @@ class TradingEngine:
                 continue
             self._reevaluate_running = True
             try:
-                await self._reevaluate_coins()
-                # Update WebSocket subscriptions to match current coins
-                current_symbols = [entry["symbol"] for entry in self.current_coins]
-                await self.ws_manager.update_subscriptions(current_symbols)
+                # Check if trading is paused
+                paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                if paused:
+                    # Only run the pause/resume decision, skip coin selection
+                    await self._check_pause_resume_decision()
+                else:
+                    await self._reevaluate_coins()
+                    # Update WebSocket subscriptions to match current coins
+                    current_symbols = [entry["symbol"] for entry in self.current_coins]
+                    await self.ws_manager.update_subscriptions(current_symbols)
             except Exception as e:
                 logger.error(f"Coin re-evaluation error: {e}", exc_info=True)
             finally:
@@ -2119,6 +2125,135 @@ class TradingEngine:
             )
 
         await asyncio.to_thread(self.redis.set, last_key, now)
+
+    async def _check_pause_resume_decision(self):
+        """When trading is paused, ask the LLM whether to resume (lightweight)."""
+        async with self._coin_reeval_lock:
+            # Only run if actually paused
+            paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
+            if not paused_raw or paused_raw != b"1":
+                return
+
+            # Gather minimal market context
+            fear_greed = await self._get_fear_greed_index()
+            global_market = await self._fetch_global_market_data()
+            altcoin_season = await self._fetch_altcoin_season_index()
+
+            # Market breadth from Redis (already computed by background task)
+            full_market_breadth = None
+            try:
+                raw = await asyncio.to_thread(self.redis.get, "market:breadth:full")
+                if raw:
+                    full_market_breadth = json.loads(raw)
+            except Exception:
+                pass
+            market_breadth = getattr(self, '_market_breadth', None)
+
+            # BTC price for context
+            btc_price = None
+            try:
+                ticker = await asyncio.to_thread(self.exchange.fetch_ticker, "BTC/USDT")
+                btc_price = ticker.get("last")
+            except Exception:
+                pass
+
+            # Current pause reason
+            reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
+            pause_reason = reason_raw.decode() if isinstance(reason_raw, bytes) else (reason_raw or "")
+
+            # Build a concise prompt
+            prompt_parts = [
+                "Trading is currently paused.",
+            ]
+            if pause_reason:
+                prompt_parts.append(f"Pause reason: {pause_reason}")
+            if fear_greed:
+                prompt_parts.append(f"Fear & Greed Index: {fear_greed['value']} ({fear_greed['classification']})")
+            if btc_price:
+                prompt_parts.append(f"BTC/USDT price: {btc_price}")
+            if market_breadth:
+                prompt_parts.append(f"Market breadth (top coins): {market_breadth['positive_pct']}% positive")
+            if full_market_breadth:
+                prompt_parts.append(f"Full market breadth: {full_market_breadth['positive_pct']}% positive")
+            if global_market and global_market.get("btc_dominance") is not None:
+                prompt_parts.append(f"BTC dominance: {global_market['btc_dominance']}%")
+            if altcoin_season:
+                prompt_parts.append(f"Altcoin Season Index: {altcoin_season['value']} ({altcoin_season['description']})")
+
+            prompt = (
+                "\n".join(prompt_parts)
+                + "\n\nShould we resume trading now? Reply with a JSON object: "
+                '{"resume_trading": true/false, "reason": "short explanation"}'
+            )
+
+            try:
+                response = await asyncio.to_thread(
+                    get_cached_llm_response, prompt, SYSTEM_PROMPT, 120
+                )
+                decision = json.loads(response)
+            except Exception as e:
+                logger.warning(f"Pause/resume LLM call failed: {e}")
+                return
+
+            resume_trading = decision.get("resume_trading")
+            reason = decision.get("reason", "")
+
+            if resume_trading is True:
+                # Only resume if the pause was LLM-initiated
+                source_raw = await asyncio.to_thread(self.redis.get, "trading:pause_source")
+                source = source_raw.decode() if isinstance(source_raw, bytes) else (source_raw or "")
+                if source != "llm":
+                    logger.info("LLM resume request ignored because pause was not initiated by LLM.")
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            "▶️ LLM requested to resume trading, but the pause was not initiated by the LLM.",
+                            summary={"action": "RESUME", "reason": "LLM resume request ignored (manual pause active)"}
+                        )
+                    return
+
+                # Check minimum LLM pause duration
+                llm_pause_time_raw = await asyncio.to_thread(self.redis.get, "trading:llm_pause_time")
+                if llm_pause_time_raw:
+                    try:
+                        llm_pause_time = float(llm_pause_time_raw)
+                        if time.time() - llm_pause_time < MIN_LLM_PAUSE_DURATION:
+                            remaining = MIN_LLM_PAUSE_DURATION - (time.time() - llm_pause_time)
+                            logger.info(f"Ignoring LLM resume request: minimum pause duration not elapsed ({remaining:.0f}s remaining).")
+                            if self.notifier:
+                                await self.notifier.send_notification(
+                                    f"⏸️ LLM resume request ignored: minimum pause duration "
+                                    f"({MIN_LLM_PAUSE_DURATION}s) not yet elapsed ({remaining:.0f}s remaining).",
+                                    summary={"action": "RESUME", "reason": f"LLM resume blocked by minimum pause duration ({MIN_LLM_PAUSE_DURATION}s)"}
+                                )
+                            return
+                    except (ValueError, TypeError):
+                        pass
+
+                # Resume trading
+                pause_keys = [
+                    "trading:paused",
+                    "trading:pause_source",
+                    "trading:pause_start",
+                    "trading:pause_duration",
+                    "trading:pause_reason",
+                    "trading:llm_pause_time",
+                ]
+                for key in pause_keys:
+                    await asyncio.to_thread(self.redis.delete, key)
+                logger.info("LLM decided to resume trading.")
+                if self.notifier:
+                    reason_text = f" – {reason}" if reason else ""
+                    await self.notifier.send_notification(
+                        f"▶️ Trading resumed by LLM decision{reason_text}",
+                        summary={"action": "RESUME", "reason": f"LLM resume request: {reason}" if reason else "LLM resume request"}
+                    )
+            elif resume_trading is False:
+                # LLM wants to stay paused – optionally update reason
+                if reason:
+                    await asyncio.to_thread(self.redis.set, "trading:pause_reason", reason)
+                logger.info(f"LLM decided to keep trading paused. Reason: {reason}")
+            else:
+                logger.warning(f"Invalid resume_trading value in LLM response: {resume_trading}")
 
     async def _process_coin(self, coin_entry: Dict[str, str], trading_paused: bool = False):
         """Fetch market data, get LLM strategy, validate, and execute."""
