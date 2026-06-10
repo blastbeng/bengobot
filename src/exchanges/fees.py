@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 import redis
 import ccxt
+from src.utils.retry import retry_on_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ EXCHANGE_DEFAULT_FEES = {
 }
 
 
+@retry_on_rate_limit()
 def get_fee_rate(
     exchange: ccxt.Exchange,
     symbol: str,

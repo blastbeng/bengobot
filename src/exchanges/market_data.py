@@ -1,9 +1,11 @@
 import ccxt
 import logging
 from typing import List, Dict, Any, Optional
+from src.utils.retry import retry_on_rate_limit
 
 logger = logging.getLogger(__name__)
 
+@retry_on_rate_limit()
 def get_available_pairs(exchange: ccxt.Exchange, base_currency: str) -> List[str]:
     """Return list of trading pairs that have the given base currency (e.g., 'USDT')."""
     exchange.load_markets()
@@ -13,6 +15,7 @@ def get_available_pairs(exchange: ccxt.Exchange, base_currency: str) -> List[str
             pairs.append(symbol)
     return pairs
 
+@retry_on_rate_limit()
 def get_tickers(exchange: ccxt.Exchange, symbols: Optional[List[str]] = None) -> Dict[str, Any]:
     """Fetch tickers for given symbols. If symbols is None, fetch all.
 
@@ -57,10 +60,12 @@ def get_tickers(exchange: ccxt.Exchange, symbols: Optional[List[str]] = None) ->
             )
             return {}
 
+@retry_on_rate_limit()
 def get_order_book(exchange: ccxt.Exchange, symbol: str, limit: int = 20) -> Dict[str, Any]:
     """Fetch order book for a symbol."""
     return exchange.fetch_order_book(symbol, limit)
 
+@retry_on_rate_limit()
 def get_multi_timeframe_ohlcv(
     exchange: ccxt.Exchange,
     symbol: str,
