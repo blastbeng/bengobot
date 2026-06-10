@@ -130,6 +130,16 @@ class Settings(BaseSettings):
             raise ValueError("LLM_TIMEOUT must be positive")
         return v
 
+    # Maximum slippage allowed when capping buy order size (0.0 = no cap)
+    MAX_SLIPPAGE_CAP_PCT: float = 0.1
+
+    @field_validator("MAX_SLIPPAGE_CAP_PCT")
+    @classmethod
+    def validate_max_slippage_cap_pct(cls, v: float) -> float:
+        if v < 0.0:
+            raise ValueError("MAX_SLIPPAGE_CAP_PCT must be >= 0")
+        return v
+
     # Redis
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379

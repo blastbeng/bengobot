@@ -1468,7 +1468,9 @@ Maximum coins to trade: {max_coins}
             "sized to the per-coin budget. Use this to decide whether to reduce position_size_fraction "
             "or skip the trade entirely if slippage is too high. "
             "For scalping very small percentages, slippage above 0.05% may erode profitability. "
-            "If slippage is high, consider a smaller position or a different coin.\n"
+            "If slippage is high, consider a smaller position or a different coin. "
+            f"Note: the engine will automatically cap your buy size to keep slippage below "
+            f"{settings.MAX_SLIPPAGE_CAP_PCT}% (configurable).\n"
         )
     if unrealized_pnl is not None and position_info:
         prompt += f"Current position unrealized P&L: {unrealized_pnl:.2f} {symbol.split('/')[1]}\n"

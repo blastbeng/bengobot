@@ -2827,7 +2827,7 @@ class TradingEngine:
                             summary={"symbol": symbol, "action": "SKIP", "reason": "Trading paused"}
                         )
                 else:
-                    await self._execute_signal(symbol, validated, timeframe=assigned_tf, atr=atr, spread_pct=spread_pct)
+                    await self._execute_signal(symbol, validated, timeframe=assigned_tf, atr=atr, spread_pct=spread_pct, order_book=order_book)
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e}", exc_info=True)
             if self.notifier:
@@ -3458,7 +3458,7 @@ class TradingEngine:
             except Exception as e:
                 logger.error(f"Risk check failed for {symbol}: {e}")
 
-    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None, spread_pct: Optional[float] = None):
+    async def _execute_signal(self, symbol: str, signal, timeframe: str = None, exit_reason: str = None, atr: Optional[float] = None, spread_pct: Optional[float] = None, order_book: Optional[Dict[str, Any]] = None):
         """Execute a BUY or SELL signal."""
         async with self._risk_lock:
             base, quote = symbol.split("/")
@@ -3565,6 +3565,61 @@ class TradingEngine:
             # Cap at remaining available balance in this cycle
             available = max(0.0, quote_balance - self._cycle_spent)
             amount = min(desired_amount, available)
+
+            # --- Cap position size to limit slippage (using order book) ---
+            if order_book and amount > 0 and settings.MAX_SLIPPAGE_CAP_PCT > 0:
+                asks = order_book.get('asks', [])
+                if asks:
+                    best_ask = asks[0][0]
+                    max_slippage = settings.MAX_SLIPPAGE_CAP_PCT / 100.0  # convert percent to decimal
+                    max_allowed_cost = 0.0
+                    cumulative_cost = 0.0
+                    cumulative_base = 0.0
+                    for ask in asks:
+                        price_level = ask[0]
+                        volume = ask[1]
+                        # If this level alone would push average price above limit, we may need to partially fill it
+                        # Compute average price if we take the whole level
+                        new_cost = cumulative_cost + price_level * volume
+                        new_base = cumulative_base + volume
+                        avg_price = new_cost / new_base if new_base > 0 else best_ask
+                        if avg_price > best_ask * (1 + max_slippage):
+                            # We can only take a fraction of this level
+                            # Solve for the base amount x such that (cumulative_cost + price_level * x) / (cumulative_base + x) = best_ask * (1 + max_slippage)
+                            target_avg = best_ask * (1 + max_slippage)
+                            if price_level != target_avg:
+                                x = (cumulative_cost - target_avg * cumulative_base) / (target_avg - price_level)
+                            else:
+                                x = float('inf')
+                            if x > 0:
+                                max_allowed_cost = cumulative_cost + price_level * x
+                            break
+                        else:
+                            cumulative_cost = new_cost
+                            cumulative_base = new_base
+                            max_allowed_cost = cumulative_cost
+                    else:
+                        # Entire order book consumed without hitting limit
+                        max_allowed_cost = cumulative_cost
+
+                    if max_allowed_cost > 0 and amount > max_allowed_cost:
+                        old_amount = amount
+                        amount = max_allowed_cost
+                        logger.info(
+                            f"BUY amount capped from {old_amount:.2f} to {amount:.2f} {quote} "
+                            f"to limit slippage to {settings.MAX_SLIPPAGE_CAP_PCT}%"
+                        )
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"⚠️ BUY {symbol} capped to {amount:.2f} {quote} (slippage limit {settings.MAX_SLIPPAGE_CAP_PCT}%)",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "INFO",
+                                    "reason": "Position size capped to limit slippage",
+                                    "original_amount": old_amount,
+                                    "capped_amount": amount,
+                                }
+                            )
 
             if amount <= 0:
                 logger.info(f"Insufficient {quote} to buy {symbol}")
