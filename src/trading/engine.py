@@ -1831,8 +1831,11 @@ class TradingEngine:
                                             )
                                             skip_resume = True
                                             if self.notifier:
+                                                remaining = MIN_LLM_PAUSE_DURATION - (time.time() - llm_pause_time)
                                                 await self.notifier.send_notification(
-                                                    f"⏸️ LLM resume request ignored: minimum pause duration ({MIN_LLM_PAUSE_DURATION}s) not yet elapsed.",
+                                                    f"⏸️ LLM resume request ignored: minimum pause duration "
+                                                    f"({MIN_LLM_PAUSE_DURATION}s) not yet elapsed "
+                                                    f"({remaining:.0f}s remaining).",
                                                     summary={
                                                         "action": "INFO",
                                                         "reason": f"LLM resume blocked by minimum pause duration ({MIN_LLM_PAUSE_DURATION}s)",
@@ -1884,35 +1887,39 @@ class TradingEngine:
                     else:
                         logger.warning(f"Invalid global_risk_multiplier: {global_risk_mult}")
 
-                # If trading is currently paused and the LLM did not resume, notify the user with the reason (if any)
-                if trading_paused_bool and pause_trading is not False:
-                    # Only send if we didn't already send a pause notification this cycle (i.e., pause_trading was not True)
-                    if pause_trading is not True:
-                        if self.notifier:
-                            # Use the LLM-provided reason if available, otherwise fall back to the stored reason
-                            display_reason = pause_reason
-                            if not display_reason:
-                                stored_reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
-                                display_reason = stored_reason_raw.decode() if isinstance(stored_reason_raw, bytes) else (stored_reason_raw or "")
-                            reason_text = f" – {display_reason}" if display_reason else ""
-                            await self.notifier.send_notification(
-                                f"⏸️ Trading remains paused by LLM decision{reason_text}",
-                                summary={
-                                    "action": "INFO",
-                                    "reason": f"LLM maintains pause: {display_reason}" if display_reason else "LLM maintains pause"
-                                }
-                            )
-                # If trading is currently active and the LLM decided to keep it active, notify with reason
-                if not trading_paused_bool and pause_trading is False:
+                # --- Send a coherent status notification reflecting the final pause state ---
+                # Re-read the actual pause state after all decisions (resume may have been blocked)
+                final_paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
+                final_paused = final_paused_raw is not None and final_paused_raw == b"1"
+
+                if final_paused:
+                    # Trading is still paused – notify with the current reason
+                    stored_reason_raw = await asyncio.to_thread(self.redis.get, "trading:pause_reason")
+                    stored_reason = stored_reason_raw.decode() if isinstance(stored_reason_raw, bytes) else (stored_reason_raw or "")
+                    # Prefer the LLM's reason if it just set the pause, otherwise use stored
+                    display_reason = pause_reason if (pause_trading is True and pause_reason) else stored_reason
+                    reason_text = f" – {display_reason}" if display_reason else ""
                     if self.notifier:
-                        reason_text = f" – {pause_reason}" if pause_reason else ""
                         await self.notifier.send_notification(
-                            f"▶️ Trading remains active by LLM decision{reason_text}",
+                            f"⏸️ Trading remains paused by LLM decision{reason_text}",
                             summary={
                                 "action": "INFO",
-                                "reason": f"LLM keeps trading active: {pause_reason}" if pause_reason else "LLM keeps trading active"
+                                "reason": f"LLM maintains pause: {display_reason}" if display_reason else "LLM maintains pause"
                             }
                         )
+                else:
+                    # Trading is active – notify only if the LLM explicitly made a decision about pause/resume
+                    # to avoid spamming on every cycle where the LLM didn't mention pause at all
+                    if pause_trading is not None:
+                        if self.notifier:
+                            reason_text = f" – {pause_reason}" if pause_reason else ""
+                            await self.notifier.send_notification(
+                                f"▶️ Trading remains active by LLM decision{reason_text}",
+                                summary={
+                                    "action": "INFO",
+                                    "reason": f"LLM keeps trading active: {pause_reason}" if pause_reason else "LLM keeps trading active"
+                                }
+                            )
 
                 existing_coins = {c['symbol']: c for c in self.current_coins}
                 for coin in deduped[: self.effective_max_coins]:
