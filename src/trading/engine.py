@@ -1668,6 +1668,7 @@ class TradingEngine:
             open_positions=self.positions,
             coin_tenure=coin_tenure,
             coin_max_tenure=coin_max_tenure,
+            full_market_breadth=full_market_breadth,
         )
         # Build a market snapshot dict for caching
         market_snapshot = {
@@ -1689,6 +1690,7 @@ class TradingEngine:
             "open_positions": self.positions,
             "coin_tenure": coin_tenure,
             "coin_max_tenure": coin_max_tenure,
+            "full_market_breadth": full_market_breadth,
             "base_balance": base_balance,
             "per_coin_budget": per_coin_budget,
             "max_coins": self.effective_max_coins,

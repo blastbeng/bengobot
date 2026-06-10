@@ -251,6 +251,7 @@ def build_coin_selection_prompt(
     sentiment_trend: Optional[Dict[str, Optional[float]]] = None,
     volume_trends: Optional[Dict[str, Optional[float]]] = None,
     market_breadth: Optional[Dict[str, Any]] = None,
+    full_market_breadth: Optional[Dict[str, Any]] = None,
     btc_dominance: Optional[float] = None,
     total_market_cap: Optional[Dict[str, Any]] = None,
     altcoin_season: Optional[Dict[str, Any]] = None,
@@ -574,6 +575,16 @@ Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h", "max_tenure_hour
             f"candidate coins have a positive 24h change ({market_breadth['positive_count']} positive).\n"
             "High breadth (>70%) indicates broad market strength (risk-on); low breadth (<30%) indicates weakness (risk-off). "
             "Use this to gauge overall market participation and adjust your coin selection and risk parameters accordingly.\n"
+        )
+    if full_market_breadth:
+        prompt += (
+            f"\nFull market breadth (all available pairs): {full_market_breadth['positive_pct']}% of "
+            f"{full_market_breadth['total_count']} pairs have a positive 24h change "
+            f"({full_market_breadth['positive_count']} positive).\n"
+            "This is a broader measure than the candidate‑only breadth. "
+            "Use it to confirm the overall market health. "
+            "If the full breadth is very low (<25%) while the candidate breadth is moderate, "
+            "the market may be more fragile than it appears – consider pausing or reducing risk.\n"
         )
     if btc_dominance is not None:
         prompt += f"\nBitcoin dominance: {btc_dominance:.2f}%\n"
