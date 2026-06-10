@@ -3268,6 +3268,8 @@ class TradingEngine:
                                         "exit_reason": f"partial_take_profit_level_{i}",
                                     }
                                 )
+                            if symbol in self.positions:
+                                await self._sweep_dust(symbol)
                 else:
                     # Single partial TP (existing logic, unchanged)
                     partial_tp_pct = pos.get("partial_take_profit_pct")
@@ -3977,3 +3979,39 @@ class TradingEngine:
                             "reason": f"Sell order failed: {e}"[:200],
                         }
                     )
+
+    async def _sweep_dust(self, symbol: str):
+        """Sell any remaining dust balance of a coin after a partial sell."""
+        base = symbol.split("/")[0]
+        try:
+            balance = await asyncio.to_thread(self.trader.get_balance, base)
+        except Exception as e:
+            logger.warning(f"Dust sweep: could not fetch balance for {base}: {e}")
+            return
+        if balance <= 0:
+            return
+
+        try:
+            ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+            price = ticker["last"]
+        except Exception as e:
+            logger.warning(f"Dust sweep: could not fetch price for {symbol}: {e}")
+            return
+
+        market = self.exchange.markets.get(symbol, {})
+        limits = market.get("limits", {})
+        min_amount = limits.get("amount", {}).get("min")
+        min_cost = limits.get("cost", {}).get("min")
+
+        if min_amount is not None and balance < float(min_amount):
+            logger.info(f"Dust sweep: {balance} {base} below min amount {min_amount}, cannot sell.")
+            return
+        if min_cost is not None and balance * price < float(min_cost):
+            logger.info(f"Dust sweep: notional {balance * price:.4f} below min cost {min_cost}, cannot sell.")
+            return
+
+        try:
+            order = await asyncio.to_thread(self.trader.create_market_sell_order, symbol, balance)
+            logger.info(f"Dust sweep: sold {balance} {base} from {symbol} – order {order.get('id')}")
+        except Exception as e:
+            logger.error(f"Dust sweep failed for {symbol}: {e}")
