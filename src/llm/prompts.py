@@ -713,6 +713,7 @@ def build_coin_selection_prompt(
     trading_paused: Optional[bool] = None,
     open_positions: Optional[Dict[str, Dict[str, Any]]] = None,
     coin_tenure: Optional[Dict[str, float]] = None,
+    coin_max_tenure: Optional[Dict[str, Optional[float]]] = None,
 ) -> str:
     """Build a prompt to ask the LLM which coins to trade."""
     # Summarize tickers and limits for the prompt
@@ -808,6 +809,18 @@ Currently tracked coins (with assigned timeframes): {json.dumps(current_coins) i
             "reason to drop them (e.g., delisting, severe negative sentiment, consistent losses, "
             "or budget constraints). Only replace a coin if the new candidate is clearly superior.\n"
         )
+    if coin_max_tenure:
+        prompt += "\n**Current max tenure per coin (hours, if set):**\n"
+        for sym, hours in coin_max_tenure.items():
+            if hours is not None:
+                prompt += f"  {sym}: {hours:.1f}h\n"
+        prompt += (
+            "You may optionally set a `max_tenure_hours` for each coin you select. "
+            "If set, the bot will force-sell the coin after it has been in the portfolio for that many hours. "
+            "Use this to rotate out of coins that may become stagnant. "
+            "If you omit this field, the coin will have no tenure limit (it can stay indefinitely). "
+            "If you keep a coin that already has a max tenure, you may change it or keep it as is.\n"
+        )
 
     prompt += f"""
 Available trading pairs with market data and minimum trade cost (in {base_currency}):
@@ -824,13 +837,13 @@ Each symbol can only appear once in your selection. Choose the single best timef
 **Output ONLY the raw JSON object. Do NOT wrap it in ```json fences. Do NOT include any text before or after the JSON.**
 
 Return a JSON object with the following fields:
-- "coins": a JSON array of objects, each with "symbol" and "timeframe" (the timeframe must be one of the available timeframes, e.g., "5m", "15m", "1h", "4h").
+- "coins": a JSON array of objects, each with "symbol" and "timeframe" (the timeframe must be one of the available timeframes, e.g., "5m", "15m", "1h", "4h"). Each object may optionally include "max_tenure_hours" (a positive float, hours) to force-sell the coin after that many hours in the portfolio. Omit or set to null for no limit.
 - "max_coins": an integer between 0 and {max_coins} indicating how many coins you actually want to trade. Set to 0 to pause trading. This must equal the length of the "coins" array.
 - "reasoning": a short string (max 200 characters) explaining why you selected these specific coins and timeframes. This will be shown to the user, so make it informative.
 
 You may optionally include "coin_revaluation_interval_seconds" (integer >= 60) to change how often the bot re-evaluates the coin list.
 
-Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h"}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "reasoning": "BTC shows strong uptrend on 1h with high volume; ETH has bullish MACD crossover on 15m.", "coin_revaluation_interval_seconds": 300, "pause_trading": false, "pause_reason": "Market conditions are favorable"}}"""
+Example: {{"coins": [{{"symbol": "BTC/USDT", "timeframe": "1h", "max_tenure_hours": 48}}, {{"symbol": "ETH/USDT", "timeframe": "15m"}}], "max_coins": 2, "reasoning": "BTC shows strong uptrend on 1h with high volume; ETH has bullish MACD crossover on 15m.", "coin_revaluation_interval_seconds": 300, "pause_trading": false, "pause_reason": "Market conditions are favorable"}}"""
     # --- Enhanced pause/resume guidance ---
     if trading_paused:
         prompt += (

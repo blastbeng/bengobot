@@ -1396,6 +1396,12 @@ class TradingEngine:
         for sym, first_seen in self._coin_first_seen.items():
             coin_tenure[sym] = round(now - first_seen)
 
+        # Compute current max tenure per coin for the prompt
+        coin_max_tenure = {}
+        for entry in self.current_coins:
+            if 'max_tenure_hours' in entry:
+                coin_max_tenure[entry['symbol']] = entry['max_tenure_hours']
+
         prompt = build_coin_selection_prompt(
             available_pairs=sample_pairs,
             current_coins=self.current_coins,
@@ -1428,6 +1434,7 @@ class TradingEngine:
             trading_paused=trading_paused_bool,
             open_positions=self.positions,
             coin_tenure=coin_tenure,
+            coin_max_tenure=coin_max_tenure,
         )
         parsed = {}
         try:
@@ -1481,7 +1488,11 @@ class TradingEngine:
                                 tf = item.get("timeframe")
                                 if tf not in settings.OHLCV_TIMEFRAMES:
                                     tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
-                                new_coins.append({"symbol": sym, "timeframe": tf})
+                                entry = {"symbol": sym, "timeframe": tf}
+                                mth = item.get("max_tenure_hours")
+                                if mth is not None:
+                                    entry["max_tenure_hours"] = mth
+                                new_coins.append(entry)
                         elif isinstance(item, str):
                             if item in available_pairs:
                                 default_tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
@@ -1495,7 +1506,11 @@ class TradingEngine:
                                 tf = item.get("timeframe")
                                 if tf not in settings.OHLCV_TIMEFRAMES:
                                     tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
-                                new_coins.append({"symbol": sym, "timeframe": tf})
+                                entry = {"symbol": sym, "timeframe": tf}
+                                mth = item.get("max_tenure_hours")
+                                if mth is not None:
+                                    entry["max_tenure_hours"] = mth
+                                new_coins.append(entry)
                         elif isinstance(item, str):
                             if item in available_pairs:
                                 default_tf = settings.OHLCV_TIMEFRAMES[0] if settings.OHLCV_TIMEFRAMES else "1h"
@@ -1640,6 +1655,9 @@ class TradingEngine:
                         coin['entry_time'] = existing_coins[coin['symbol']]['entry_time']
                     else:
                         coin['entry_time'] = time.time()
+                    # Preserve max_tenure_hours from existing coin if LLM didn't specify it
+                    if 'max_tenure_hours' not in coin and coin['symbol'] in existing_coins and 'max_tenure_hours' in existing_coins[coin['symbol']]:
+                        coin['max_tenure_hours'] = existing_coins[coin['symbol']]['max_tenure_hours']
                 self.current_coins = deduped[: self.effective_max_coins]
 
                 # If LLM explicitly chose zero coins, respect that and don't fall back to volume-based selection
@@ -1744,11 +1762,12 @@ class TradingEngine:
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
 
-        # --- Maximum coin tenure ---
-        if settings.MAX_COIN_TENURE_HOURS > 0 and 'entry_time' in coin_entry:
-            tenure_seconds = settings.MAX_COIN_TENURE_HOURS * 3600
+        # --- Maximum coin tenure (per-coin, set by LLM) ---
+        max_tenure_hours = coin_entry.get('max_tenure_hours')
+        if max_tenure_hours is not None and max_tenure_hours > 0 and 'entry_time' in coin_entry:
+            tenure_seconds = max_tenure_hours * 3600
             if time.time() - coin_entry['entry_time'] > tenure_seconds:
-                logger.info(f"Max tenure reached for {symbol}, forcing sell")
+                logger.info(f"Max tenure reached for {symbol} ({max_tenure_hours:.1f}h), forcing sell")
                 signal = Signal(action="SELL", confidence=1.0, reasoning="Max coin tenure reached")
                 await self._execute_signal(symbol, signal, exit_reason="max_tenure")
                 return

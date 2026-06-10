@@ -49,15 +49,6 @@ class Settings(BaseSettings):
             raise ValueError("COIN_SELECTION_TOP_VOLUME_LIMIT must be at least 1")
         return v
 
-    # Maximum hours a coin can stay in the portfolio before forced rotation (0 = disabled)
-    MAX_COIN_TENURE_HOURS: float = 0.0
-
-    @field_validator("MAX_COIN_TENURE_HOURS")
-    @classmethod
-    def validate_max_coin_tenure(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("MAX_COIN_TENURE_HOURS must be >= 0")
-        return v
 
     # OHLCV timeframes for multi-timeframe analysis
     OHLCV_TIMEFRAMES: list[str] = ["5m", "15m", "1h", "4h"]
