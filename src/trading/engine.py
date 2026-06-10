@@ -201,7 +201,7 @@ class TradingEngine:
                 if paused:
                     # Only auto-resume if the pause was initiated by the LLM
                     source = await asyncio.to_thread(self.redis.get, "trading:pause_source")
-                    if source and source.decode() == "llm":
+                    if source and (source.decode() if isinstance(source, bytes) else source) == "llm":
                         pause_start_raw = await asyncio.to_thread(self.redis.get, "trading:pause_start")
                         pause_duration_raw = await asyncio.to_thread(self.redis.get, "trading:pause_duration")
                         if pause_start_raw and pause_duration_raw:
@@ -1898,7 +1898,7 @@ class TradingEngine:
                         if pause_trading:
                             # Only pause if not already manually paused
                             current_source = await asyncio.to_thread(self.redis.get, "trading:pause_source")
-                            if current_source and current_source.decode() == "manual":
+                            if current_source and (current_source.decode() if isinstance(current_source, bytes) else current_source) == "manual":
                                 logger.info("LLM pause request ignored because trading is manually paused.")
                                 if self.notifier:
                                     await self.notifier.send_notification(
