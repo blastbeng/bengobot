@@ -28,28 +28,29 @@ class WebSocketManager:
 
     async def _reconnect(self):
         """Close and recreate the exchange connection, then re-subscribe."""
-        logger.warning("WebSocket reconnecting...")
-        try:
-            await self.exchange.close()
-        except Exception:
-            pass
-        # Clear cached data to avoid stale prices
-        self.tickers.clear()
-        self.order_books.clear()
-        self.trades.clear()
-        # Re-create the pro exchange
-        from src.exchanges.factory import get_pro_exchange
-        self.exchange = get_pro_exchange()
-        # If using per-symbol tickers, restart those tasks
-        if not self._use_batch_tickers:
-            for sym in list(self._ticker_tasks.keys()):
-                task = self._ticker_tasks.pop(sym)
-                task.cancel()
-            for sym in self.symbols:
-                task = asyncio.create_task(self._watch_ticker(sym))
-                self._ticker_tasks[sym] = task
-        # Order book tasks will automatically reconnect on next iteration
-        logger.info("WebSocket reconnection complete.")
+        async with self._reconnect_lock:
+            logger.warning("WebSocket reconnecting...")
+            try:
+                await self.exchange.close()
+            except Exception:
+                pass
+            # Clear cached data to avoid stale prices
+            self.tickers.clear()
+            self.order_books.clear()
+            self.trades.clear()
+            # Re-create the pro exchange
+            from src.exchanges.factory import get_pro_exchange
+            self.exchange = get_pro_exchange()
+            # If using per-symbol tickers, restart those tasks
+            if not self._use_batch_tickers:
+                for sym in list(self._ticker_tasks.keys()):
+                    task = self._ticker_tasks.pop(sym)
+                    task.cancel()
+                for sym in self.symbols:
+                    task = asyncio.create_task(self._watch_ticker(sym))
+                    self._ticker_tasks[sym] = task
+            # Order book tasks will automatically reconnect on next iteration
+            logger.info("WebSocket reconnection complete.")
 
     async def _watch_ticker(self, symbol: str):
         """Continuously watch the ticker for a single symbol."""
