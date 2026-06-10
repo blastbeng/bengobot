@@ -107,6 +107,14 @@ class TradingEngine:
         self._running = True
         self._last_state_save = 0
 
+        # Re-entrancy guards for periodic tasks
+        self._reconcile_running = False
+        self._reevaluate_running = False
+        self._pause_check_running = False
+        self._news_cache_running = False
+        self._news_fast_running = False
+        self._market_data_running = False
+
     def set_notifier(self, notifier):
         """Attach a notification service (e.g., TelegramBot)."""
         self.notifier = notifier
@@ -121,15 +129,27 @@ class TradingEngine:
     async def _periodic_reconcile(self):
         """Run position reconciliation every 60 seconds."""
         while self._running:
+            if self._reconcile_running:
+                logger.warning("Reconcile still running; skipping this cycle.")
+                await asyncio.sleep(60)
+                continue
+            self._reconcile_running = True
             try:
                 await self._reconcile_positions()
             except Exception as e:
                 logger.error(f"Reconcile error: {e}", exc_info=True)
+            finally:
+                self._reconcile_running = False
             await asyncio.sleep(60)
 
     async def _periodic_reevaluate(self):
         """Re-evaluate coin selection periodically."""
         while self._running:
+            if self._reevaluate_running:
+                logger.warning("Coin re-evaluation still running; skipping this cycle.")
+                await asyncio.sleep(self._coin_revaluation_interval)
+                continue
+            self._reevaluate_running = True
             try:
                 await self._reevaluate_coins()
                 # Update WebSocket subscriptions to match current coins
@@ -137,11 +157,18 @@ class TradingEngine:
                 await self.ws_manager.update_subscriptions(current_symbols)
             except Exception as e:
                 logger.error(f"Coin re-evaluation error: {e}", exc_info=True)
+            finally:
+                self._reevaluate_running = False
             await asyncio.sleep(self._coin_revaluation_interval)
 
     async def _periodic_pause_check(self):
         """Check and handle auto-resume from pause."""
         while self._running:
+            if self._pause_check_running:
+                logger.warning("Pause check still running; skipping this cycle.")
+                await asyncio.sleep(30)
+                continue
+            self._pause_check_running = True
             try:
                 paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                 if paused:
@@ -169,6 +196,8 @@ class TradingEngine:
                             pass  # ignore malformed values
             except Exception as e:
                 logger.error(f"Pause check error: {e}", exc_info=True)
+            finally:
+                self._pause_check_running = False
             await asyncio.sleep(30)
 
     def _get_sentiment_str(self, symbol: str) -> str:
@@ -396,6 +425,11 @@ class TradingEngine:
             return
         # Fetch immediately on startup, then periodically
         while self._running:
+            if self._news_fast_running:
+                logger.warning("Fast news refresh still running; skipping this cycle.")
+                await asyncio.sleep(settings.NEWS_FAST_UPDATE_INTERVAL_MINUTES * 60)
+                continue
+            self._news_fast_running = True
             try:
                 symbols = [entry["symbol"] for entry in self.current_coins]
                 if symbols:
@@ -405,6 +439,8 @@ class TradingEngine:
                     )
             except Exception as e:
                 logger.error(f"Fast news refresh error: {e}")
+            finally:
+                self._news_fast_running = False
             await asyncio.sleep(settings.NEWS_FAST_UPDATE_INTERVAL_MINUTES * 60)
 
     async def _refresh_news_cache(self):
@@ -418,6 +454,11 @@ class TradingEngine:
             return
 
         while self._running:
+            if self._news_cache_running:
+                logger.warning("News cache refresh still running; skipping this cycle.")
+                await asyncio.sleep(settings.NEWS_UPDATE_INTERVAL_MINUTES * 60)
+                continue
+            self._news_cache_running = True
             try:
                 cycle_start = time.time()
                 # Slow refresh: all available pairs EXCEPT the coins already handled by the fast loop
@@ -454,6 +495,8 @@ class TradingEngine:
                 logger.debug(f"News cache refreshed for {len(symbols_to_refresh)} symbols in {time.time() - cycle_start:.2f}s")
             except Exception as e:
                 logger.error(f"Background news refresh error: {e}")
+            finally:
+                self._news_cache_running = False
 
             # Clean up old news articles
             try:
@@ -578,6 +621,11 @@ class TradingEngine:
         # Initial delay to let the engine settle
         await asyncio.sleep(30)
         while self._running:
+            if self._market_data_running:
+                logger.warning("Market data download still running; skipping this cycle.")
+                await asyncio.sleep(settings.MARKET_DATA_REFRESH_SECONDS)
+                continue
+            self._market_data_running = True
             try:
                 if not self.current_coins:
                     logger.debug("No coins tracked; skipping market data download.")
@@ -601,6 +649,8 @@ class TradingEngine:
                     logger.info("Market data download cycle complete.")
             except Exception as e:
                 logger.error(f"Market data download loop error: {e}", exc_info=True)
+            finally:
+                self._market_data_running = False
 
             await asyncio.sleep(settings.MARKET_DATA_REFRESH_SECONDS)
 
