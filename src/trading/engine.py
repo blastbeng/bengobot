@@ -3354,6 +3354,9 @@ class TradingEngine:
                                     f"P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%) | Remaining: {pos['amount']:.6f}"
                                 )
 
+                            if symbol in self.positions:
+                                await self._sweep_dust(symbol)
+
                 # --- News sentiment exit ---
                 news_threshold = pos.get("news_sentiment_exit_threshold")
                 if news_threshold is not None and settings.NEWS_ENABLED:
