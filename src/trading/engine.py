@@ -1634,6 +1634,12 @@ class TradingEngine:
                             }
                         )
 
+                existing_coins = {c['symbol']: c for c in self.current_coins}
+                for coin in deduped[: self.effective_max_coins]:
+                    if coin['symbol'] in existing_coins and 'entry_time' in existing_coins[coin['symbol']]:
+                        coin['entry_time'] = existing_coins[coin['symbol']]['entry_time']
+                    else:
+                        coin['entry_time'] = time.time()
                 self.current_coins = deduped[: self.effective_max_coins]
 
                 # If LLM explicitly chose zero coins, respect that and don't fall back to volume-based selection
@@ -1660,6 +1666,12 @@ class TradingEngine:
                     fallback_coins.append({"symbol": sym, "timeframe": default_tf})
                 if len(fallback_coins) >= self.effective_max_coins:
                     break
+            existing_coins = {c['symbol']: c for c in self.current_coins}
+            for coin in fallback_coins:
+                if coin['symbol'] in existing_coins and 'entry_time' in existing_coins[coin['symbol']]:
+                    coin['entry_time'] = existing_coins[coin['symbol']]['entry_time']
+                else:
+                    coin['entry_time'] = time.time()
             self.current_coins = fallback_coins
 
         # Ensure all open positions remain in current_coins so they continue to be managed by the LLM strategy
@@ -1731,6 +1743,15 @@ class TradingEngine:
         """Fetch market data, get LLM strategy, validate, and execute."""
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
+
+        # --- Maximum coin tenure ---
+        if settings.MAX_COIN_TENURE_HOURS > 0 and 'entry_time' in coin_entry:
+            tenure_seconds = settings.MAX_COIN_TENURE_HOURS * 3600
+            if time.time() - coin_entry['entry_time'] > tenure_seconds:
+                logger.info(f"Max tenure reached for {symbol}, forcing sell")
+                signal = Signal(action="SELL", confidence=1.0, reasoning="Max coin tenure reached")
+                await self._execute_signal(symbol, signal, exit_reason="max_tenure")
+                return
 
         # --- Cooldown after a losing trade (LLM-defined) ---
         last_loss = self.last_loss_time.get(symbol)
