@@ -243,6 +243,9 @@ class TelegramBot:
                 line += f"  Current: {current_price:.4f}"
             line += "\n"
             line += f"   Fee: {fee_str}\n"
+            # Add position value in base currency (USDT)
+            value = amt * (current_price if current_price is not None else price)
+            line += f"   Value: {value:.2f} {self.engine.base_currency}\n"
 
             pnl = t['unrealized_pnl']
             pnl_pct = t['unrealized_pnl_pct']
