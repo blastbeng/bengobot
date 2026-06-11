@@ -4854,7 +4854,50 @@ class TradingEngine:
         try:
             order = await asyncio.to_thread(self.trader.create_market_sell_order, symbol, balance)
             logger.info(f"Dust sweep: sold {balance} {base} from {symbol} – order {order.get('id')}")
+
+            # Record the dust sale in trade history for consistency
+            fee_rate = get_fee_rate(self.exchange, symbol, self.redis)
+            fee = order.get('fee', {})
+            fee_cost = float(fee.get('cost', 0.0) or 0.0)
+            fee_currency = fee.get('currency', '')
+            if fee_cost == 0.0:
+                fee_cost = order['cost'] * fee_rate
+                fee_currency = symbol.split('/')[1]
+                order['fee'] = {'cost': fee_cost, 'currency': fee_currency}
+
+            pos = self.positions.get(symbol)
+            if pos:
+                cost_basis = pos.get("cost_basis", pos["amount"] * pos["price"])
+                net_quote = order['cost'] - (fee_cost if fee_currency == symbol.split('/')[1] else 0.0)
+                realized_pnl = net_quote - cost_basis
+                order["realized_pnl"] = realized_pnl
+                order["cost_basis"] = cost_basis
+                order["exit_reason"] = "dust_sweep"
+                order["strategy_type"] = pos.get("strategy_type", "unknown")
+                order["timeframe"] = pos.get("timeframe")
+                if "timestamp" in pos:
+                    order["hold_time_seconds"] = (order["timestamp"] - pos["timestamp"]) / 1000.0
+                self.trade_history.append(order)
+                await asyncio.to_thread(insert_trade, order)
+
+            # Remove the now-empty position
+            self.positions.pop(symbol, None)
+            self._strategy_intervals.pop(symbol, None)
+            self._last_strategy_eval.pop(symbol, None)
+
             if settings.TRADING_MODE == "paper":
                 await asyncio.to_thread(save_paper_balances, self.trader.balances)
+
+            if self.notifier:
+                await self.notifier.send_notification(
+                    f"🧹 Dust sweep: sold remaining {balance} {base} from {symbol}",
+                    summary={
+                        "symbol": symbol,
+                        "action": "SELL",
+                        "reason": "Dust sweep",
+                        "amount": balance,
+                        "exit_reason": "dust_sweep",
+                    }
+                )
         except Exception as e:
             logger.error(f"Dust sweep failed for {symbol}: {e}")
