@@ -1044,6 +1044,7 @@ class TradingEngine:
                     self.trade_history.append(trade)
                     await asyncio.to_thread(insert_trade, trade)
                     logger.warning(f"Delisted coin {coin}: recorded forced sell of {pos['amount']} at 0.")
+                    await self._remove_coin_if_paused(coin)
 
         # --- Externally modified balances ---
         for symbol, pos in list(self.positions.items()):
@@ -1094,6 +1095,7 @@ class TradingEngine:
                 )
                 if actual_balance == 0.0:
                     del self.positions[symbol]
+                    await self._remove_coin_if_paused(symbol)
                 else:
                     self.positions[symbol]["amount"] = actual_balance
                     self.positions[symbol]["cost_basis"] = cost_basis - prorated_cost_basis
@@ -3947,6 +3949,7 @@ class TradingEngine:
                             else:
                                 self.positions.pop(symbol, None)
                                 logger.info(f"Position fully closed by partial TP levels for {symbol}")
+                                await self._remove_coin_if_paused(symbol)
                                 if settings.TRADING_MODE == "paper":
                                     await asyncio.to_thread(save_paper_balances, self.trader.balances)
                                 break
@@ -4047,6 +4050,7 @@ class TradingEngine:
                             else:
                                 self.positions.pop(symbol, None)
                                 logger.warning(f"Partial TP closed entire position for {symbol} unexpectedly.")
+                                await self._remove_coin_if_paused(symbol)
                                 continue
 
                             pos["partial_tp_triggered"] = True
@@ -4666,6 +4670,7 @@ class TradingEngine:
                 self.positions.pop(symbol, None)
                 self._strategy_intervals.pop(symbol, None)
                 self._last_strategy_eval.pop(symbol, None)
+                await self._remove_coin_if_paused(symbol)
                 self.trade_history.append(order)
                 await asyncio.to_thread(insert_trade, order)
                 # Persist paper balances immediately
@@ -4884,6 +4889,7 @@ class TradingEngine:
             self.positions.pop(symbol, None)
             self._strategy_intervals.pop(symbol, None)
             self._last_strategy_eval.pop(symbol, None)
+            await self._remove_coin_if_paused(symbol)
 
             if settings.TRADING_MODE == "paper":
                 await asyncio.to_thread(save_paper_balances, self.trader.balances)
@@ -4901,3 +4907,10 @@ class TradingEngine:
                 )
         except Exception as e:
             logger.error(f"Dust sweep failed for {symbol}: {e}")
+
+    async def _remove_coin_if_paused(self, symbol: str):
+        """If trading is paused, remove the symbol from current_coins to prevent new signals."""
+        paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
+        if paused_raw and paused_raw == b"1":
+            self.current_coins = [c for c in self.current_coins if c["symbol"] != symbol]
+            logger.info(f"Trading paused: removed {symbol} from current_coins after position closed.")
