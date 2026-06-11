@@ -1931,26 +1931,38 @@ class TradingEngine:
                                     )
                             else:
                                 if trading_paused_bool:
-                                    # Check minimum LLM pause duration
-                                    llm_pause_time_raw = await asyncio.to_thread(self.redis.get, "trading:llm_pause_time")
-                                    if llm_pause_time_raw:
+                                    # Determine the required pause duration:
+                                    # - the LLM-set pause_duration_seconds (if any) stored in Redis
+                                    # - but never less than MIN_LLM_PAUSE_DURATION
+                                    pause_start_raw = await asyncio.to_thread(self.redis.get, "trading:pause_start")
+                                    pause_duration_raw = await asyncio.to_thread(self.redis.get, "trading:pause_duration")
+                                    required_pause = MIN_LLM_PAUSE_DURATION
+                                    if pause_duration_raw:
                                         try:
-                                            llm_pause_time = float(llm_pause_time_raw)
-                                            if time.time() - llm_pause_time < MIN_LLM_PAUSE_DURATION:
+                                            llm_set_duration = int(pause_duration_raw)
+                                            required_pause = max(MIN_LLM_PAUSE_DURATION, llm_set_duration)
+                                        except (ValueError, TypeError):
+                                            pass
+
+                                    if pause_start_raw:
+                                        try:
+                                            pause_start = float(pause_start_raw)
+                                            elapsed = time.time() - pause_start
+                                            if elapsed < required_pause:
+                                                remaining = required_pause - elapsed
                                                 logger.info(
-                                                    f"Ignoring LLM resume request: minimum pause duration "
-                                                    f"({MIN_LLM_PAUSE_DURATION}s) not yet elapsed."
+                                                    f"Ignoring LLM resume request: required pause duration "
+                                                    f"({required_pause}s) not yet elapsed ({remaining:.0f}s remaining)."
                                                 )
                                                 skip_resume = True
                                                 if self.notifier:
-                                                    remaining = MIN_LLM_PAUSE_DURATION - (time.time() - llm_pause_time)
                                                     await self.notifier.send_notification(
-                                                        f"⏸️ LLM resume request ignored: minimum pause duration "
-                                                        f"({MIN_LLM_PAUSE_DURATION}s) not yet elapsed "
+                                                        f"⏸️ LLM resume request ignored: pause duration "
+                                                        f"({required_pause}s) not yet elapsed "
                                                         f"({remaining:.0f}s remaining).",
                                                         summary={
                                                             "action": "RESUME",
-                                                            "reason": f"LLM resume blocked by minimum pause duration ({MIN_LLM_PAUSE_DURATION}s)",
+                                                            "reason": f"LLM resume blocked by pause duration ({required_pause}s)",
                                                         }
                                                     )
                                         except (ValueError, TypeError):
