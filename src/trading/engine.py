@@ -428,10 +428,10 @@ class TradingEngine:
                     ttl = getattr(settings, 'ALTCOIN_SEASON_CACHE_TTL_SECONDS', 3600)
                     await asyncio.to_thread(self.redis.setex, cache_key, ttl, json.dumps(result))
                     return result
-            else:
-                logger.warning(
-                    f"Altcoin Season Index API returned status {resp.status_code}: {resp.text[:200]}"
-                )
+                else:
+                    logger.warning(
+                        f"Altcoin Season Index API returned status {resp.status_code}: {resp.text[:200]}"
+                    )
         except Exception as e:
             logger.warning(f"Failed to fetch Altcoin Season Index: {e}")
         return None
