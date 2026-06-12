@@ -707,19 +707,17 @@ class TradingEngine:
         else:
             logger.info(f"Gap check for {symbol} {timeframe}: {gaps_found} gaps found, {gaps_filled} filled")
 
-    async def _backfill_new_coin(self, symbol: str):
-        """Immediately backfill 30 days of OHLCV data for a newly selected coin."""
+    async def _backfill_new_coin(self, symbol: str, timeframe: str):
+        """Immediately backfill 30 days of OHLCV data for a newly selected coin (assigned timeframe only)."""
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - 30 * 24 * 60 * 60 * 1000
-        logger.info(f"Starting immediate backfill for newly selected coin {symbol}")
-        for tf in settings.OHLCV_TIMEFRAMES:
-            try:
-                await self._backfill_ohlcv(symbol, tf, start_ms, now_ms)
-                await self._fill_gaps(symbol, tf)
-            except Exception as e:
-                logger.error(f"Initial backfill failed for {symbol} {tf}: {e}")
-            await asyncio.sleep(0.2)
-        logger.info(f"Immediate backfill complete for {symbol}")
+        logger.info(f"Starting immediate backfill for newly selected coin {symbol} ({timeframe})")
+        try:
+            await self._backfill_ohlcv(symbol, timeframe, start_ms, now_ms)
+            await self._fill_gaps(symbol, timeframe)
+        except Exception as e:
+            logger.error(f"Initial backfill failed for {symbol} {timeframe}: {e}")
+        logger.info(f"Immediate backfill complete for {symbol} ({timeframe})")
 
     async def _download_market_data_loop(self):
         """Periodically download and store OHLCV data for tracked coins, with gap detection."""
@@ -740,15 +738,13 @@ class TradingEngine:
                     start_ms = now_ms - 30 * 24 * 60 * 60 * 1000  # 30 days ago
                     for coin_entry in self.current_coins:
                         symbol = coin_entry["symbol"]
-                        logger.debug(f"Downloading market data for {symbol}")
-                        for tf in settings.OHLCV_TIMEFRAMES:
-                            try:
-                                await self._backfill_ohlcv(symbol, tf, start_ms, now_ms)
-                                await self._fill_gaps(symbol, tf)
-                            except Exception as e:
-                                logger.warning(f"Market data download failed for {symbol} {tf}: {e}")
-                            # Tiny delay between timeframes for the same coin
-                            await asyncio.sleep(0.1)
+                        tf = coin_entry["timeframe"]
+                        logger.debug(f"Downloading market data for {symbol} ({tf})")
+                        try:
+                            await self._backfill_ohlcv(symbol, tf, start_ms, now_ms)
+                            await self._fill_gaps(symbol, tf)
+                        except Exception as e:
+                            logger.warning(f"Market data download failed for {symbol} {tf}: {e}")
                         # Configurable delay between coins to avoid rate limits
                         await asyncio.sleep(settings.OHLCV_DOWNLOAD_COIN_DELAY_SECONDS)
                     logger.info("Market data download cycle complete.")
@@ -2111,10 +2107,12 @@ class TradingEngine:
 
         # Trigger immediate backfill for newly selected coins
         old_symbols = {entry["symbol"] for entry in old_coins}
-        new_symbols = {entry["symbol"] for entry in self.current_coins} - old_symbols
-        for sym in new_symbols:
-            logger.info(f"Triggering immediate backfill for newly selected coin {sym}")
-            asyncio.create_task(self._backfill_new_coin(sym))
+        for entry in self.current_coins:
+            if entry["symbol"] not in old_symbols:
+                sym = entry["symbol"]
+                tf = entry["timeframe"]
+                logger.info(f"Triggering immediate backfill for newly selected coin {sym} ({tf})")
+                asyncio.create_task(self._backfill_new_coin(sym, tf))
 
         # Also trigger immediate news fetch for newly selected coins
         if settings.NEWS_ENABLED:
