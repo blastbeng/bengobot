@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     EXCHANGE_PASSWORD: Optional[str] = None
     EXCHANGE_TIMEOUT: int = 30000  # milliseconds – timeout for all exchange API calls
 
+    # CoinMarketCap API key for altcoin season index
+    CMC_API_KEY: str = ""
+
     # Trading mode
     TRADING_MODE: str = "paper"   # "paper" or "live"
 

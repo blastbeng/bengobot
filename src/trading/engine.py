@@ -388,9 +388,14 @@ class TradingEngine:
         return None
 
     async def _fetch_altcoin_season_index(self) -> Optional[Dict[str, Any]]:
-        """Fetch Altcoin Season Index from blockchaincenter.net, cached in Redis."""
+        """Fetch Altcoin Season Index from CoinMarketCap global metrics."""
         if not getattr(settings, 'ALTCOIN_SEASON_ENABLED', True):
             return None
+        api_key = settings.CMC_API_KEY
+        if not api_key:
+            logger.warning("CMC_API_KEY not set; cannot fetch altcoin season index.")
+            return None
+
         cache_key = "altcoin_season:index"
         try:
             cached = await asyncio.to_thread(self.redis.get, cache_key)
@@ -402,26 +407,31 @@ class TradingEngine:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    "https://api.blockchaincenter.net/altcoin-season-index",
+                    "https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest",
+                    headers={"X-CMC_PRO_API_KEY": api_key},
                     timeout=10.0,
                 )
                 if resp.status_code == 200:
-                    try:
-                        data = resp.json()
-                    except Exception as json_err:
-                        logger.warning(f"Altcoin Season Index response not valid JSON: {json_err}")
-                        return None
+                    data = resp.json()
+                    btc_dominance = data["data"]["quote"]["USD"]["btc_dominance"]
+                    altcoin_index = round(100.0 - btc_dominance, 2)
+                    if altcoin_index > 75:
+                        description = "Altcoin Season"
+                    elif altcoin_index < 25:
+                        description = "Bitcoin Season"
+                    else:
+                        description = "Neutral"
                     result = {
-                        "value": int(data.get("value", 50)),
-                        "description": data.get("description", ""),
+                        "value": altcoin_index,
+                        "description": description,
                     }
                     ttl = getattr(settings, 'ALTCOIN_SEASON_CACHE_TTL_SECONDS', 3600)
                     await asyncio.to_thread(self.redis.setex, cache_key, ttl, json.dumps(result))
                     return result
-                else:
-                    logger.warning(
-                        f"Altcoin Season Index API returned status {resp.status_code}: {resp.text[:200]}"
-                    )
+            else:
+                logger.warning(
+                    f"Altcoin Season Index API returned status {resp.status_code}: {resp.text[:200]}"
+                )
         except Exception as e:
             logger.warning(f"Failed to fetch Altcoin Season Index: {e}")
         return None
