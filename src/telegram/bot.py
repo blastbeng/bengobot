@@ -165,8 +165,15 @@ class TelegramBot:
             return
 
         msg = "<b>📊 Current Status</b>\n\n"
-        llm_model = settings.OLLAMA_MODEL if settings.LLM_PROVIDER == "ollama" else settings.OPENAI_MODEL
-        msg += f"<b>🧠 LLM:</b> {settings.LLM_PROVIDER} / {llm_model}\n\n"
+        if settings.LLM_PROVIDER == "ollama":
+            mind_model = settings.OLLAMA_MIND_MODEL
+            actuator_model = settings.OLLAMA_ACTUATOR_MODEL
+        else:
+            mind_model = settings.OPENAI_MIND_MODEL
+            actuator_model = settings.OPENAI_ACTUATOR_MODEL
+        msg += f"<b>🧠 LLM:</b> {settings.LLM_PROVIDER}\n"
+        msg += f"  Mind: {mind_model}\n"
+        msg += f"  Actuator: {actuator_model}\n\n"
         coin_list = []
         for entry in coins:
             symbol = entry["symbol"]
