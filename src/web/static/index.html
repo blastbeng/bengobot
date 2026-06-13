@@ -882,8 +882,15 @@
                 }
                 const modelBadge = document.getElementById('model-badge');
                 if (modelBadge && config.llm_provider) {
-                    const modelName = config.llm_provider === 'ollama' ? config.ollama_model : config.openai_model;
-                    modelBadge.textContent = `🧠 ${config.llm_provider.toUpperCase()} / ${modelName}`;
+                    let mindModel, actuatorModel;
+                    if (config.llm_provider === 'ollama') {
+                        mindModel = config.ollama_mind_model;
+                        actuatorModel = config.ollama_actuator_model;
+                    } else {
+                        mindModel = config.openai_mind_model;
+                        actuatorModel = config.openai_actuator_model;
+                    }
+                    modelBadge.textContent = `🧠 ${config.llm_provider.toUpperCase()} Mind: ${mindModel} | Actuator: ${actuatorModel}`;
                 }
             })
             .catch(() => {
