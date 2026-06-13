@@ -4368,38 +4368,18 @@ class TradingEngine:
                         # Force re‑evaluation on the next main loop tick
                         self._last_strategy_eval.pop(symbol, None)
 
-                        if expired_count >= 3:   # fallback after 3 consecutive expiries
-                            logger.warning(
-                                f"Max hold time expired {expired_count} times for {symbol} – forcing SELL."
+                        logger.info(
+                            f"Max hold time expired for {symbol} (attempt {expired_count}) – asking LLM to decide."
+                        )
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"⏰ Max hold time expired for {symbol} – asking LLM whether to sell or extend.",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "HOLD",
+                                    "reason": "Max hold time expired – awaiting LLM decision",
+                                }
                             )
-                            if self.notifier:
-                                await self.notifier.send_notification(
-                                    f"⏰ Max hold time expired repeatedly for {symbol} – forcing close.",
-                                    summary={
-                                        "symbol": symbol,
-                                        "action": "SELL",
-                                        "reason": "Max hold time expired (fallback)",
-                                        "exit_reason": "max_hold_time_fallback",
-                                    }
-                                )
-                            await self._execute_signal(
-                                symbol,
-                                Signal(action="SELL", confidence=1.0, reasoning="Max hold time expired (fallback)"),
-                                exit_reason="max_hold_time_fallback"
-                            )
-                        else:
-                            logger.info(
-                                f"Max hold time expired for {symbol} (attempt {expired_count}) – asking LLM to decide."
-                            )
-                            if self.notifier:
-                                await self.notifier.send_notification(
-                                    f"⏰ Max hold time expired for {symbol} – asking LLM whether to sell or extend.",
-                                    summary={
-                                        "symbol": symbol,
-                                        "action": "HOLD",
-                                        "reason": "Max hold time expired – awaiting LLM decision",
-                                    }
-                                )
                         continue   # skip further checks for this symbol in this cycle
 
                 if current_price <= pos["stop_loss"]:
