@@ -3287,6 +3287,80 @@ class TradingEngine:
                     )
                     return   # stop further processing for this coin
 
+            # --- Handle stop-loss-triggered LLM decision ---
+            if stop_loss_triggered and signal.action == "HOLD":
+                # LLM decided to keep holding – must provide a new stop-loss
+                new_params = signal.strategy_params or {}
+                new_stop_method = new_params.get("stop_loss_method", "fixed")
+                new_stop_pct = None
+                if new_stop_method == "atr_multiple" and atr is not None and atr > 0:
+                    atr_mult = new_params.get("stop_loss_atr_multiple")
+                    if atr_mult is not None:
+                        new_stop_pct = (atr_mult * atr) / current_price
+                else:
+                    new_stop_pct = new_params.get("stop_loss_pct")
+
+                if new_stop_pct is not None and new_stop_pct > 0:
+                    # LLM provided a new stop – update position and clear the trigger flag
+                    logger.info(
+                        f"LLM decided to hold {symbol} after stop-loss trigger, "
+                        f"new stop_loss_pct={new_stop_pct:.4%}"
+                    )
+                    if symbol in self.positions:
+                        self.positions[symbol]["stop_loss"] = current_price * (1 - new_stop_pct)
+                        self.positions[symbol].pop("_stop_loss_triggered", None)
+                        self.positions[symbol].pop("_stop_loss_review_count", None)
+                        # Also apply any other updated parameters from the LLM
+                        self._update_position_params(
+                            symbol,
+                            new_params,
+                            signal.indicator_config,
+                            assigned_tf,
+                            current_price,
+                            atr,
+                        )
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"🔄 {symbol}: LLM adjusted stop-loss to {new_stop_pct:.4%} – holding.",
+                            summary={
+                                "symbol": symbol,
+                                "action": "HOLD",
+                                "reason": "Stop-loss adjusted by LLM",
+                                "new_stop_loss_pct": new_stop_pct,
+                            }
+                        )
+                    # Skip further processing for this coin (do not execute a trade)
+                    return
+                else:
+                    # LLM returned HOLD but did not provide a new stop-loss → force SELL
+                    logger.warning(
+                        f"LLM returned HOLD for {symbol} after stop-loss trigger but did not provide "
+                        f"a new stop-loss. Forcing SELL."
+                    )
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⛔ {symbol}: LLM did not provide new stop-loss – selling.",
+                            summary={
+                                "symbol": symbol,
+                                "action": "SELL",
+                                "reason": "Stop-loss triggered, LLM did not provide new stop",
+                                "exit_reason": "stop_loss_llm_no_action",
+                            }
+                        )
+                    await self._execute_signal(
+                        symbol,
+                        Signal(action="SELL", confidence=1.0, reasoning="Stop-loss triggered, LLM did not provide new stop"),
+                        exit_reason="stop_loss_llm_no_action"
+                    )
+                    return
+
+            elif stop_loss_triggered and signal.action == "SELL":
+                # LLM decided to sell – clear the flag and let the normal SELL execution proceed
+                if symbol in self.positions:
+                    self.positions[symbol].pop("_stop_loss_triggered", None)
+                    self.positions[symbol].pop("_stop_loss_review_count", None)
+                # Continue to the normal SELL execution below (do not return)
+
             # Compute stop-loss percentage for max risk cap (needed for slippage check)
             sl_pct = None
             if validated.action == "BUY":

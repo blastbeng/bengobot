@@ -1557,7 +1557,7 @@ Use this data to decide whether to BUY, SELL, or HOLD. If the coin has a poor wi
         )
     if stop_loss_triggered:
         prompt += (
-            f"\n**⚠️ STOP-LOSS TRIGGERED (review {stop_loss_review_count}/{MAX_STOP_LOSS_REVIEWS_PLACEHOLDER}):** "
+            f"\n**⚠️ STOP-LOSS TRIGGERED (review {stop_loss_review_count}/3):** "
             f"Your stop-loss level was triggered for {symbol}.\n"
             "You must decide immediately:\n"
             "- **SELL**: output a SELL action to close the position.\n"
