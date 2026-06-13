@@ -1450,6 +1450,7 @@ You MUST include the following risk parameters in the "parameters" object:
 - stop_loss_atr_multiple: required if stop_loss_method is "atr_multiple". A positive float (e.g., 2.0 for 2× ATR).
 - stop_loss_pct: required if stop_loss_method is "fixed". A decimal between 0.001 and 0.5. Optional if using "atr_multiple".
 - take_profit_pct, trailing_stop, trailing_stop_distance_pct, position_size_fraction, max_hold_time_seconds, cooldown_after_loss_seconds.
+**For the {assigned_timeframe or 'default'} timeframe, a reasonable minimum max_hold_time_seconds is {min_hold} seconds. Do not set it lower unless you have a very specific, justified reason (e.g., scalping with a very tight stop and high confidence).**
 You may also include optional parameters: trailing_stop_activation_pct, trailing_take_profit, trailing_take_profit_distance_pct, breakeven_activation_pct, lock_profit_activation_pct, lock_profit_level_pct, partial_take_profit_pct, partial_take_profit_fraction, partial_take_profit_levels, max_risk_per_trade_pct, min_profit_per_trade, min_risk_reward_ratio, max_spread_pct, min_depth_at_take_profit, max_slippage_pct, max_unrealized_loss_pct, min_confidence, entry_confidence_threshold, news_sentiment_exit_threshold, strategy_interval_seconds. See the system prompt for details.
 The bot will NOT use any default values. If you omit any required parameter, the trade will be skipped.
 
