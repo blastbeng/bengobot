@@ -11,6 +11,7 @@ def validate_signal(
     atr: Optional[float] = None,
     price: Optional[float] = None,
     spread_pct: Optional[float] = None,
+    timeframe_seconds: Optional[int] = None,
 ) -> Signal:
     """
     Validate a trading signal.
@@ -86,6 +87,17 @@ def validate_signal(
         mht = params["max_hold_time_seconds"]
         if not isinstance(mht, (int, float)) or mht <= 0:
             return Signal(action="HOLD", confidence=0.0, reasoning="Invalid max_hold_time_seconds")
+        # Enforce a minimum max hold time relative to the candle timeframe
+        if timeframe_seconds is not None and mht < 2 * timeframe_seconds:
+            return Signal(
+                action="HOLD",
+                confidence=0.0,
+                reasoning=(
+                    f"max_hold_time_seconds ({mht}s) is too short for the "
+                    f"timeframe ({timeframe_seconds}s candles); "
+                    f"minimum is {2 * timeframe_seconds}s"
+                )
+            )
 
         if "cooldown_after_loss_seconds" not in params:
             return Signal(action="HOLD", confidence=0.0, reasoning="Missing required parameter: cooldown_after_loss_seconds")

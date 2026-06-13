@@ -29,6 +29,17 @@ from src.indicators import (
 logger = logging.getLogger(__name__)
 
 
+def _timeframe_to_seconds(tf: str) -> int:
+    """Convert a timeframe string (e.g., '5m', '1h') to seconds."""
+    match = re.match(r'^(\d+)([mhdwM])$', tf)
+    if not match:
+        return 3600  # default 1h
+    amount = int(match.group(1))
+    unit = match.group(2)
+    mult = {'m': 60, 'h': 3600, 'd': 86400, 'w': 604800, 'M': 2592000}
+    return amount * mult.get(unit, 3600)
+
+
 def compact_prompt(text: str) -> str:
     """Collapse all whitespace sequences to a single space and strip."""
     return re.sub(r'\s+', ' ', text).strip()
@@ -242,7 +253,7 @@ You MUST include the following risk parameters inside the "parameters" object fo
 - "trailing_stop": true or false to enable a trailing stop.
 - "trailing_stop_distance_pct": required if "trailing_stop" is true; a decimal between 0.001 and 0.1 (e.g., 0.01 for 1%). Must be less than stop_loss_pct. If "trailing_stop" is false, set this to null.
 - "position_size_fraction": a decimal between 0.1 and 1.0 representing the fraction of your **total available quote currency balance** to allocate to this trade (e.g., 0.5 for 50% of your entire quote balance). Must be > 0 and ≤ 1. The sum of this fraction across all coins you trade should not exceed 1.0, so leave enough capital for other opportunities.
-- "max_hold_time_seconds": a positive integer number of seconds (e.g., 3600 for 1 hour). Must be > 0.
+- "max_hold_time_seconds": a positive integer number of seconds (e.g., 3600 for 1 hour). Must be > 0. **Do NOT set this too short.** A too-short max hold time forces an exit before the trade can develop. Err on the side of longer hold times.
 - "cooldown_after_loss_seconds": a non-negative integer (0 or more). If the trade results in a loss, the bot will avoid this coin for this many seconds before considering it again. Set 0 to allow immediate re-entry.
 
 You may also include the following optional parameters to fine-tune risk management:
@@ -817,6 +828,8 @@ def build_strategy_prompt(
 ) -> str:
     """Build a prompt to generate a trading strategy for a specific coin."""
     current_price = ticker.get("last") if ticker else None
+    tf_seconds = _timeframe_to_seconds(assigned_timeframe) if assigned_timeframe else 3600
+    min_hold = 2 * tf_seconds
     prompt = f"""Symbol: {symbol}
 Current ticker: {json.dumps(ticker)}
 Order book (top 5 levels): {json.dumps(order_book)}

@@ -2299,6 +2299,7 @@ class TradingEngine:
         """Fetch market data, get LLM strategy, validate, and execute."""
         symbol = coin_entry["symbol"]
         assigned_tf = coin_entry["timeframe"]
+        tf_seconds = self._timeframe_to_seconds(assigned_tf)
 
         # --- Maximum coin tenure (per-coin, set by LLM) ---
         max_tenure_hours = coin_entry.get('max_tenure_hours')
@@ -3109,6 +3110,7 @@ class TradingEngine:
                 atr=atr,
                 price=current_price,
                 spread_pct=spread_pct,
+                timeframe_seconds=tf_seconds,
             )
 
             # If the LLM produced a BUY/SELL but the validator rejected it due to a parameter
@@ -3144,6 +3146,7 @@ class TradingEngine:
                             atr=atr,
                             price=current_price,
                             spread_pct=spread_pct,
+                            timeframe_seconds=tf_seconds,
                         )
                         if validated.action != "HOLD":
                             logger.info(f"LLM corrected its signal for {symbol}: {validated.action}")
