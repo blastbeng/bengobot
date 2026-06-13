@@ -2,10 +2,13 @@ import math
 from typing import List, Dict, Optional, Tuple, Any
 
 
-def compute_atr(candles: List[List], period: int = 14) -> float:
-    """Compute Average True Range from OHLCV candles using Wilder's smoothing."""
+def compute_atr(candles: List[List], period: int = 14) -> Optional[float]:
+    """Compute Average True Range from OHLCV candles using Wilder's smoothing.
+
+    Returns None if insufficient data.
+    """
     if len(candles) < period + 1:
-        return 0.0
+        return None
     tr_values = []
     for i in range(1, len(candles)):
         high = candles[i][2]
@@ -14,7 +17,7 @@ def compute_atr(candles: List[List], period: int = 14) -> float:
         tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
         tr_values.append(tr)
     if len(tr_values) < period:
-        return 0.0
+        return None
     # Wilder's smoothing: seed with SMA of first `period` values
     atr = sum(tr_values[:period]) / period
     for i in range(period, len(tr_values)):
