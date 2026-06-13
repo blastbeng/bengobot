@@ -3090,7 +3090,29 @@ class TradingEngine:
                     market_hash=market_hash,
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"LLM strategy call timed out for {symbol}. Skipping this cycle.")
+                logger.warning(f"LLM strategy call timed out for {symbol}.")
+                # If a critical decision is pending, force a SELL immediately to protect capital.
+                if max_hold_expired or stop_loss_triggered or take_profit_triggered:
+                    reason = "LLM timeout"
+                    if max_hold_expired:
+                        reason = "Max hold expired, LLM timeout"
+                    elif stop_loss_triggered:
+                        reason = "Stop-loss triggered, LLM timeout"
+                    elif take_profit_triggered:
+                        reason = "Take-profit triggered, LLM timeout"
+                    logger.warning(f"Forcing SELL for {symbol} due to {reason}")
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⏱️ LLM timeout for {symbol} with critical flag – forcing SELL.",
+                            summary={"symbol": symbol, "action": "SELL", "reason": reason}
+                        )
+                    await self._execute_signal(
+                        symbol,
+                        Signal(action="SELL", confidence=1.0, reasoning=reason),
+                        exit_reason=reason.replace(" ", "_").lower()
+                    )
+                    return
+                # No critical flag – safe to skip this cycle.
                 if self.notifier:
                     await self.notifier.send_notification(
                         f"⏱️ LLM timeout for {symbol}, skipping.",
@@ -3103,7 +3125,29 @@ class TradingEngine:
                 return
 
             if response is None:
-                logger.warning(f"LLM returned None for {symbol}. Skipping this cycle.")
+                logger.warning(f"LLM returned None for {symbol}.")
+                # If a critical decision is pending, force a SELL immediately to protect capital.
+                if max_hold_expired or stop_loss_triggered or take_profit_triggered:
+                    reason = "LLM returned None"
+                    if max_hold_expired:
+                        reason = "Max hold expired, LLM returned None"
+                    elif stop_loss_triggered:
+                        reason = "Stop-loss triggered, LLM returned None"
+                    elif take_profit_triggered:
+                        reason = "Take-profit triggered, LLM returned None"
+                    logger.warning(f"Forcing SELL for {symbol} due to {reason}")
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⚠️ LLM returned empty response for {symbol} with critical flag – forcing SELL.",
+                            summary={"symbol": symbol, "action": "SELL", "reason": reason}
+                        )
+                    await self._execute_signal(
+                        symbol,
+                        Signal(action="SELL", confidence=1.0, reasoning=reason),
+                        exit_reason=reason.replace(" ", "_").lower()
+                    )
+                    return
+                # No critical flag – safe to skip this cycle.
                 if self.notifier:
                     await self.notifier.send_notification(
                         f"⚠️ LLM returned empty response for {symbol}, skipping.",
