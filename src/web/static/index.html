@@ -881,16 +881,10 @@
                     }
                 }
                 const modelBadge = document.getElementById('model-badge');
-                if (modelBadge && config.llm_provider) {
-                    let mindModel, actuatorModel;
-                    if (config.llm_provider === 'ollama') {
-                        mindModel = config.ollama_mind_model;
-                        actuatorModel = config.ollama_actuator_model;
-                    } else {
-                        mindModel = config.openai_mind_model;
-                        actuatorModel = config.openai_actuator_model;
-                    }
-                    modelBadge.textContent = `🧠 ${config.llm_provider.toUpperCase()} Mind: ${mindModel} | Actuator: ${actuatorModel}`;
+                if (modelBadge && config.llm_mind_model) {
+                    const mindProvider = config.llm_mind_provider || 'unknown';
+                    const actuatorProvider = config.llm_actuator_provider || 'unknown';
+                    modelBadge.textContent = `🧠 ${mindProvider.toUpperCase()} Mind: ${config.llm_mind_model} | ${actuatorProvider.toUpperCase()} Actuator: ${config.llm_actuator_model}`;
                 }
             })
             .catch(() => {
