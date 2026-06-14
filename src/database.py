@@ -235,6 +235,20 @@ def get_telegram_chat_id() -> Optional[int]:
             return None
     return None
 
+def cleanup_old_ohlcv(retention_days: int = 30):
+    """Delete OHLCV candles older than retention_days for all symbols and timeframes."""
+    conn = get_connection()
+    cutoff_ms = int((time.time() - retention_days * 24 * 60 * 60) * 1000)
+    deleted = conn.execute(
+        "DELETE FROM market_data WHERE timestamp < ?",
+        (cutoff_ms,)
+    ).rowcount
+    conn.commit()
+    conn.close()
+    if deleted:
+        logger.info(f"Cleaned up {deleted} old OHLCV candles (older than {retention_days} days)")
+    return deleted
+
 
 def get_performance() -> Dict[str, Any]:
     """Return performance summary grouped by coin and timeframe, plus a TOTAL row."""

@@ -54,7 +54,7 @@ from src.strategies.base import Signal
 from src.strategies.llm_parser import create_strategy_from_llm, LLMStrategy
 from src.strategies.validator import validate_signal
 from src.utils.redis_client import get_redis_client
-from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance, store_news_articles, get_aggregate_sentiment_from_db, get_news_for_symbol, get_ohlcv, get_latest_ohlcv_timestamp, insert_ohlcv_batch, save_paper_balances, load_paper_balances
+from src.database import load_trading_state, save_trading_state, delete_trading_state, insert_trade, get_performance, store_news_articles, get_aggregate_sentiment_from_db, get_news_for_symbol, get_ohlcv, get_latest_ohlcv_timestamp, insert_ohlcv_batch, save_paper_balances, load_paper_balances, cleanup_old_ohlcv
 
 logger = logging.getLogger(__name__)
 
@@ -740,6 +740,8 @@ class TradingEngine:
                         # Configurable delay between coins to avoid rate limits
                         await asyncio.sleep(settings.OHLCV_DOWNLOAD_COIN_DELAY_SECONDS)
                     logger.info("Market data download cycle complete.")
+                    # Clean up old OHLCV data (older than 30 days)
+                    await asyncio.to_thread(cleanup_old_ohlcv, 30)
             except Exception as e:
                 logger.error(f"Market data download loop error: {e}", exc_info=True)
             finally:
