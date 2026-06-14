@@ -63,6 +63,7 @@ DEFAULT_STRATEGY_INTERVAL = 600   # fallback when no timeframe or no coins (10 m
 MIN_COIN_REVALUATION_INTERVAL = 300  # seconds (5 minutes) – prevents rapid toggling
 MIN_LLM_PAUSE_DURATION = 300  # seconds – LLM cannot resume before this
 MAX_STOP_LOSS_REVIEWS = 3   # force-sell after this many consecutive stop-loss reviews
+MAX_TAKE_PROFIT_REVIEWS = 3   # force-sell after this many consecutive take-profit reviews
 
 
 class TradingEngine:
@@ -4451,8 +4452,31 @@ class TradingEngine:
                                 f"(review {review_count}/{self.MAX_STOP_LOSS_REVIEWS})."
                             )
                 elif current_price >= pos["take_profit"]:
-                    # Always ask the LLM whether to sell or adjust the take-profit.
+                    # Always ask the LLM whether to sell or adjust the take-profit, but cap reviews.
                     review_count = pos.get("_take_profit_review_count", 0)
+                    if review_count >= self.MAX_TAKE_PROFIT_REVIEWS:
+                        logger.warning(
+                            f"Take-profit triggered for {symbol} at {current_price} – "
+                            f"review count {review_count} >= {self.MAX_TAKE_PROFIT_REVIEWS}, forcing SELL."
+                        )
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"🎯 Take‑profit triggered for {symbol} at {current_price:.4f} – "
+                                f"max reviews reached, selling.",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SELL",
+                                    "reason": "Take-profit (max reviews)",
+                                    "price": current_price,
+                                    "exit_reason": "take_profit_max_reviews",
+                                }
+                            )
+                        await self._execute_signal(
+                            symbol,
+                            Signal(action="SELL", confidence=1.0, reasoning="Take-profit (max reviews)"),
+                            exit_reason="take_profit_max_reviews"
+                        )
+                        continue
                     # First or repeated trigger: set flag and ask LLM
                     if not pos.get("_take_profit_triggered"):
                         pos["_take_profit_triggered"] = True
@@ -4461,7 +4485,7 @@ class TradingEngine:
                         self._last_strategy_eval.pop(symbol, None)
                         logger.info(
                             f"Take-profit triggered for {symbol} at {current_price} – "
-                            f"asking LLM (review {pos['_take_profit_review_count']})."
+                            f"asking LLM (review {pos['_take_profit_review_count']}/{self.MAX_TAKE_PROFIT_REVIEWS})."
                         )
                         if self.notifier:
                             await self.notifier.send_notification(
@@ -4477,7 +4501,7 @@ class TradingEngine:
                         # Already waiting for LLM; do nothing
                         logger.debug(
                             f"Take-profit still triggered for {symbol}, waiting for LLM response "
-                            f"(review {review_count})."
+                            f"(review {review_count}/{self.MAX_TAKE_PROFIT_REVIEWS})."
                         )
             except Exception as e:
                 logger.error(f"Risk check failed for {symbol}: {e}")
@@ -5061,7 +5085,22 @@ class TradingEngine:
 
         # --- Take-profit ---
         if "take_profit_pct" in params:
-            pos["take_profit"] = current_price * (1 + params["take_profit_pct"])
+            tp_pct = params["take_profit_pct"]
+            try:
+                tp_pct = float(tp_pct)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Ignoring invalid take_profit_pct=%r for %s",
+                    params["take_profit_pct"], symbol,
+                )
+                tp_pct = None
+            if tp_pct is not None and tp_pct > 0 and current_price > 0:
+                pos["take_profit"] = current_price * (1 + tp_pct)
+            elif tp_pct is not None:
+                logger.warning(
+                    "Ignoring invalid take_profit_pct=%s for %s (current_price=%s)",
+                    tp_pct, symbol, current_price,
+                )
 
         # --- Trailing stop ---
         if "trailing_stop" in params:
