@@ -255,6 +255,8 @@ async def tickers(symbols: str = ""):
         return {}
     symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
     result = {}
+
+    # 1) Try WebSocket cache first
     for sym in symbol_list:
         t = engine.ws_manager.get_ticker(sym)
         if t:
@@ -265,7 +267,37 @@ async def tickers(symbols: str = ""):
                 "change_24h": t.get("percentage"),
             }
         else:
+            result[sym] = None  # mark as missing
+
+    # 2) Fallback to REST only if WebSocket is unhealthy AND we have missing symbols
+    if not engine.ws_manager.healthy:
+        missing = [sym for sym in symbol_list if result.get(sym) is None]
+        if missing:
+            try:
+                tickers_data = await asyncio.to_thread(
+                    engine.exchange.fetch_tickers, missing
+                )
+                for sym in missing:
+                    t = tickers_data.get(sym)
+                    if t:
+                        result[sym] = {
+                            "last": t.get("last"),
+                            "bid": t.get("bid"),
+                            "ask": t.get("ask"),
+                            "change_24h": t.get("percentage"),
+                        }
+                    else:
+                        result[sym] = {"last": None, "bid": None, "ask": None, "change_24h": None}
+            except Exception as e:
+                logger.warning(f"REST tickers fallback failed: {e}")
+                for sym in missing:
+                    result[sym] = {"last": None, "bid": None, "ask": None, "change_24h": None}
+
+    # 3) Fill any remaining None placeholders with null dicts
+    for sym in symbol_list:
+        if result.get(sym) is None:
             result[sym] = {"last": None, "bid": None, "ask": None, "change_24h": None}
+
     return result
 
 @app.websocket("/ws")
