@@ -2250,6 +2250,13 @@ class TradingEngine:
             if not paused_raw or paused_raw != b"1":
                 return
 
+            # Only handle LLM-initiated pauses. Manual pauses are not subject to auto-resume logic.
+            source_raw = await asyncio.to_thread(self.redis.get, "trading:pause_source")
+            source = source_raw.decode() if isinstance(source_raw, bytes) else (source_raw or "")
+            if source != "llm":
+                logger.debug("Pause/resume check skipped: pause was not initiated by LLM (source=%s).", source or "unknown")
+                return
+
             # Gather minimal market context
             fear_greed = await self._get_fear_greed_index()
             global_market = await self._fetch_global_market_data()
@@ -2379,6 +2386,11 @@ class TradingEngine:
                     )
                 # If we failed 3 times in a row, force‑resume (optional but safe)
                 if current_fails >= 3:
+                    # Double-check source before force-resuming
+                    fail_source = await asyncio.to_thread(self.redis.get, "trading:pause_source")
+                    if fail_source and (fail_source.decode() if isinstance(fail_source, bytes) else fail_source) != "llm":
+                        logger.warning("Force-resume on LLM failure skipped: pause source is not LLM.")
+                        return
                     pause_keys = [
                         "trading:paused",
                         "trading:pause_source",
@@ -2409,17 +2421,7 @@ class TradingEngine:
             reason = decision.get("reason", "")
 
             if resume_trading is True:
-                # Only resume if the pause was LLM-initiated
-                source_raw = await asyncio.to_thread(self.redis.get, "trading:pause_source")
-                source = source_raw.decode() if isinstance(source_raw, bytes) else (source_raw or "")
-                if source != "llm":
-                    logger.info("LLM resume request ignored because pause was not initiated by LLM.")
-                    if self.notifier:
-                        await self.notifier.send_notification(
-                            "▶️ LLM requested to resume trading, but the pause was not initiated by the LLM.",
-                            summary={"action": "RESUME", "reason": "LLM resume request ignored (manual pause active)", "model_type": "actuator"}
-                        )
-                    return
+                # Source is already verified as "llm" by the early check at the top of this method.
 
                 # Check minimum LLM pause duration
                 llm_pause_time_raw = await asyncio.to_thread(self.redis.get, "trading:llm_pause_time")
@@ -2489,6 +2491,11 @@ class TradingEngine:
                 await asyncio.to_thread(self.redis.expire, keep_key, 86400)
 
                 if new_keep_count >= settings.PAUSE_MAX_CONSECUTIVE_KEEP:
+                    # Double-check that the pause is still LLM-initiated (should always be true here)
+                    current_source = await asyncio.to_thread(self.redis.get, "trading:pause_source")
+                    if current_source and (current_source.decode() if isinstance(current_source, bytes) else current_source) != "llm":
+                        logger.warning("Force-resume skipped: pause source changed to non-LLM.")
+                        return
                     logger.warning(
                         f"LLM kept trading paused {new_keep_count} times consecutively – "
                         f"forcing resume with risk multiplier {settings.PAUSE_FORCE_RESUME_RISK_MULTIPLIER}."
