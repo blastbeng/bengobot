@@ -103,7 +103,7 @@ def _get_enabled_sources() -> List[str]:
         sources.append("stocktwits")
     if settings.RSS_FEEDS:
         sources.append("rss")
-    logger.info(f"News sources auto-enabled: {sources}")
+    logger.debug(f"News sources auto-enabled: {sources}")
     return sources
 
 
@@ -172,7 +172,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     if cached:
         try:
             articles = json.loads(cached)
-            logger.info(f"News for {base_coin} served from cache ({len(articles)} articles)")
+            logger.debug(f"News for {base_coin} served from cache ({len(articles)} articles)")
             return articles
         except Exception:
             pass
@@ -180,7 +180,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     articles: List[Dict[str, str]] = []
 
     enabled = _get_enabled_sources()
-    logger.info(f"Enabled news sources for {symbol}: {enabled}")
+    logger.debug(f"Enabled news sources for {symbol}: {enabled}")
     for source in enabled:
         source_start = time.time()
         if source == "newsapi":
@@ -234,7 +234,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
         logger.warning(f"Failed to cache news for {base_coin}: {e}")
 
     total_time = time.time() - start_time
-    logger.info(f"News for {symbol}: {len(unique)} articles from {len(enabled)} sources in {total_time:.2f}s")
+    logger.debug(f"News for {symbol}: {len(unique)} articles from {len(enabled)} sources in {total_time:.2f}s")
     if total_time > 5.0:
         logger.warning(f"News fetch for {symbol} took {total_time:.2f}s – consider reducing sources or increasing cache TTL")
 
