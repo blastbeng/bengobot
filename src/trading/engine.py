@@ -4493,6 +4493,8 @@ class TradingEngine:
                     for i, level in enumerate(partial_levels):
                         if i in triggered:
                             continue
+                        if i in pos.get("_partial_tp_triggered_levels", []):
+                            continue
                         lvl_pct = level["take_profit_pct"]
                         lvl_frac = level["fraction"]
                         entry_price = pos["price"]
