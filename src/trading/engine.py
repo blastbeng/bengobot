@@ -1279,7 +1279,18 @@ class TradingEngine:
                         # Check if trading is paused (skip BUY signals)
                         paused = await asyncio.to_thread(self.redis.get, "trading:paused")
                         trading_paused = paused is not None and paused == b"1"
-                        await self._process_coin(coin_entry, trading_paused=trading_paused)
+                        try:
+                            await asyncio.wait_for(
+                                self._process_coin(coin_entry, trading_paused=trading_paused),
+                                timeout=settings.LLM_TIMEOUT + 10  # slightly longer than the LLM timeout
+                            )
+                        except asyncio.TimeoutError:
+                            logger.error(f"Timeout processing coin {coin_entry['symbol']} – skipping.")
+                            if self.notifier:
+                                await self.notifier.send_notification(
+                                    f"⏱️ Processing timeout for {coin_entry['symbol']} – skipping this cycle.",
+                                    summary={"symbol": coin_entry["symbol"], "action": "SKIP", "reason": "Processing timeout"}
+                                )
                         self._last_strategy_eval[symbol] = now
 
                 # Save state periodically (every 30 seconds)
@@ -3486,6 +3497,7 @@ class TradingEngine:
                 response = strategy_result["response"]
                 llm_provider = strategy_result["provider"]
                 llm_model = strategy_result["model"]
+                logger.debug(f"LLM call completed for {symbol} (provider={llm_provider}, model={llm_model})")
                 # Update snapshot after a real LLM call
                 self._update_last_eval_snapshot(symbol, current_price, rsi, macd_hist)
             except asyncio.TimeoutError:

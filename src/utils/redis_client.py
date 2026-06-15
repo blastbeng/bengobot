@@ -11,6 +11,8 @@ def get_redis_client() -> redis.Redis:
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
         decode_responses=True,
+        socket_timeout=5,           # seconds – max time for any Redis command
+        socket_connect_timeout=5,   # seconds – max time to establish connection
     )
 
 def check_redis_connection() -> bool:

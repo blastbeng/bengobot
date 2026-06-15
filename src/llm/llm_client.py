@@ -31,7 +31,13 @@ def _get_ollama_response(prompt: str, system_prompt: str = "", model: str = None
     }
 
     try:
-        with httpx.Client(timeout=settings.LLM_TIMEOUT) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=settings.LLM_TIMEOUT,
+            write=10.0,
+            pool=5.0,
+        )
+        with httpx.Client(timeout=timeout) as client:
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -65,7 +71,13 @@ def _get_openai_response(prompt: str, system_prompt: str = "", model: str = None
     }
 
     try:
-        with httpx.Client(timeout=settings.LLM_TIMEOUT) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=settings.LLM_TIMEOUT,
+            write=10.0,
+            pool=5.0,
+        )
+        with httpx.Client(timeout=timeout) as client:
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
