@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
@@ -142,6 +143,14 @@ def sell(symbol: str = None):
 def reload():
     settings.reload()
     return {"status": "reloaded"}
+
+@app.post("/api/restart")
+def restart():
+    """
+    Restart the entire application by exiting the process.
+    Docker (or the process manager) will bring it back up.
+    """
+    os._exit(0)
 
 @app.get("/api/config")
 def config():

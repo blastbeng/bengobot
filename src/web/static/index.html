@@ -325,6 +325,7 @@
                     <button id="btn-resume" style="background:var(--green);">▶️ Resume</button>
                     <button id="btn-sell-all" style="background:var(--red);">💸 Sell All</button>
                     <button id="btn-reload" style="background:#6e7681;">🔄 Reload Settings</button>
+                    <button id="btn-restart" style="background:#d73a49;">🔁 Restart App</button>
                 </div>
                 <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
                     <label for="update-interval" style="color: var(--text-secondary); font-size: 0.9rem;">🔄 Update Interval:</label>
@@ -869,6 +870,12 @@
         });
         document.getElementById('btn-reload').addEventListener('click', () => {
             fetch('/api/reload', { method: 'POST' }).then(() => alert('Settings reloaded.'));
+        });
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            if (confirm('⚠️ This will fully restart the bot. All positions will be preserved. Continue?')) {
+                fetch('/api/restart', { method: 'POST' }).catch(() => {});
+                // The page will disconnect; no need to handle the response.
+            }
         });
         document.getElementById('btn-refresh-news').addEventListener('click', () => {
             const newsDiv = document.getElementById('news');
