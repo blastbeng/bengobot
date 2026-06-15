@@ -351,8 +351,25 @@ def _fetch_newsapi(symbol: str) -> List[Dict[str, str]]:
             "apiKey": settings.NEWS_API_KEY,
         }
         response = httpx.get(url, params=params, timeout=settings.NEWS_HTTP_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        data = response.json()
+        
+        # Check HTTP status
+        if response.status_code != 200:
+            logger.warning(
+                f"LunarCrush returned HTTP {response.status_code} for {symbol}: "
+                f"{response.text[:200]}"
+            )
+            return []
+        
+        # Safely parse JSON
+        try:
+            data = response.json()
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.warning(
+                f"LunarCrush JSON decode failed for {symbol}: {e}. "
+                f"Response text: {response.text[:200]}"
+            )
+            return []
+        
         articles = []
         for art in data.get("articles", []):
             title = art.get("title", "")
