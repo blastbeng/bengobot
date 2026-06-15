@@ -88,23 +88,32 @@ def _format_news_for_prompt(articles: list) -> str:
     return "\n".join(lines)
 
 
-def get_cached_news_summary(symbol: str, model_type: str = "actuator") -> str:
+def get_cached_news_summary(symbol: str, model_type: str = "actuator") -> dict:
     """Return a cached LLM-generated one‑sentence news summary for a symbol.
 
-    The summary is stored in Redis under ``news_summary:{symbol}`` with a TTL
-    equal to ``settings.NEWS_CACHE_TTL_SECONDS``.  If no articles are available
-    the string ``"No recent news."`` is returned (and also cached).
+    Returns a dict with keys:
+        - "summary": the summary text
+        - "provider": the LLM provider used (e.g. "ollama" or "openai")
+        - "model": the LLM model used
+
+    The result is stored in Redis under ``news_summary:{symbol}`` with a TTL
+    equal to ``settings.NEWS_CACHE_TTL_SECONDS``.
     """
     redis_client = get_redis_client()
     cache_key = f"news_summary:{symbol}"
     cached = redis_client.get(cache_key)
     if cached:
-        return cached.decode() if isinstance(cached, bytes) else cached
+        try:
+            data = json.loads(cached)
+            if isinstance(data, dict) and "summary" in data:
+                return data
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     base_coin = symbol.split("/")[0] if "/" in symbol else symbol
     articles = get_news_for_symbol(base_coin, max_age_seconds=settings.NEWS_CACHE_TTL_SECONDS)
     if not articles:
-        summary = "No recent news."
+        result = {"summary": "No recent news.", "provider": "", "model": ""}
     else:
         try:
             formatted = _format_news_for_prompt(articles)
@@ -115,16 +124,21 @@ def get_cached_news_summary(symbol: str, model_type: str = "actuator") -> str:
                 "that explains the overall sentiment and the main reason for it. "
                 "Do not include any other text."
             )
-            summary = get_cached_llm_response(compact_prompt(prompt), "", ttl=300, model_type=model_type)
-            summary = summary.strip()
-            if len(summary) > 120:
-                summary = summary[:117] + "..."
+            llm_result = get_cached_llm_response(compact_prompt(prompt), "", ttl=300, model_type=model_type)
+            summary_text = llm_result["response"].strip()
+            if len(summary_text) > 120:
+                summary_text = summary_text[:117] + "..."
+            result = {
+                "summary": summary_text,
+                "provider": llm_result["provider"],
+                "model": llm_result["model"],
+            }
         except Exception:
-            summary = "Could not generate summary."
+            result = {"summary": "Could not generate summary.", "provider": "", "model": ""}
 
     ttl = settings.NEWS_CACHE_TTL_SECONDS
-    redis_client.setex(cache_key, ttl, summary)
-    return summary
+    redis_client.setex(cache_key, ttl, json.dumps(result))
+    return result
 
 
 SYSTEM_PROMPT = """You are a professional cryptocurrency trading bot assistant. Your primary goal is to generate consistent profit across short, medium, and long timeframes. Prioritize positions where you find the most profit potential, regardless of timeframe, while preserving capital. You must avoid large drawdowns and only trade when there is a clear edge.

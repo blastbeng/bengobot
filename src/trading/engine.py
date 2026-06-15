@@ -1816,9 +1816,11 @@ class TradingEngine:
         parsed = {}
         max_retries = 2
         response = None
+        llm_provider = None
+        llm_model = None
         for attempt in range(max_retries + 1):
             try:
-                response = await asyncio.to_thread(
+                result = await asyncio.to_thread(
                     get_cached_llm_response,
                     compact_prompt(prompt),
                     COMPACTED_SYSTEM_PROMPT,
@@ -1826,6 +1828,9 @@ class TradingEngine:
                     market_hash=market_hash,
                     model_type="mind",
                 )
+                response = result["response"]
+                llm_provider = result["provider"]
+                llm_model = result["model"]
                 break  # success
             except asyncio.TimeoutError:
                 if attempt < max_retries:
@@ -1867,10 +1872,13 @@ class TradingEngine:
                     "Here is the original request:\n\n" + prompt
                 )
                 try:
-                    response = await asyncio.to_thread(
+                    correction_result = await asyncio.to_thread(
                         get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 120,
                         model_type="actuator",
                     )
+                    response = correction_result["response"]
+                    llm_provider = correction_result["provider"]
+                    llm_model = correction_result["model"]
                     json.loads(response)  # validate the retry response
                 except Exception as e:
                     logger.error(f"LLM coin selection still invalid after retry: {e}")
@@ -2217,6 +2225,8 @@ class TradingEngine:
                         "pause_decision": pause_trading if isinstance(pause_trading, bool) else None,
                         "pause_reason": pause_reason,
                         "model_type": "mind",
+                        "llm_provider": llm_provider,
+                        "llm_model": llm_model,
                     }
                 )
         elif self.notifier:
@@ -2237,6 +2247,8 @@ class TradingEngine:
                     "pause_decision": pause_trading if isinstance(pause_trading, bool) else None,
                     "pause_reason": pause_reason,
                     "model_type": "mind",
+                    "llm_provider": llm_provider,
+                    "llm_model": llm_model,
                 }
             )
 
@@ -2367,10 +2379,13 @@ class TradingEngine:
             )
 
             try:
-                response = await asyncio.to_thread(
+                pause_result = await asyncio.to_thread(
                     get_cached_llm_response, compact_prompt(prompt), COMPACTED_SYSTEM_PROMPT, 120,
                     model_type="actuator",
                 )
+                response = pause_result["response"]
+                llm_provider = pause_result["provider"]
+                llm_model = pause_result["model"]
                 decision = json.loads(response)
             except Exception as e:
                 logger.warning(f"Pause/resume LLM call failed: {e}")
@@ -2478,7 +2493,7 @@ class TradingEngine:
                     mult_text = f" (risk multiplier: {applied_mult})" if applied_mult is not None else ""
                     await self.notifier.send_notification(
                         f"▶️ Trading resumed by LLM decision{reason_text}{mult_text}",
-                        summary={"action": "RESUME", "reason": f"LLM resume request: {reason}" if reason else "LLM resume request", "model_type": "actuator"}
+                        summary={"action": "RESUME", "reason": f"LLM resume request: {reason}" if reason else "LLM resume request", "model_type": "actuator", "llm_provider": llm_provider, "llm_model": llm_model}
                     )
             elif resume_trading is False:
                 # LLM wants to stay paused – optionally update reason
@@ -2534,7 +2549,7 @@ class TradingEngine:
                         await self.notifier.send_notification(
                             f"⏸️ LLM decided to keep trading paused{reason_text} "
                             f"({new_keep_count}/{settings.PAUSE_MAX_CONSECUTIVE_KEEP} consecutive keeps)",
-                            summary={"action": "PAUSE", "reason": f"LLM keep paused: {reason}" if reason else "LLM keep paused", "model_type": "actuator"}
+                            summary={"action": "PAUSE", "reason": f"LLM keep paused: {reason}" if reason else "LLM keep paused", "model_type": "actuator", "llm_provider": llm_provider, "llm_model": llm_model}
                         )
             else:
                 logger.warning(f"Invalid resume_trading value in LLM response: {resume_trading}")
@@ -3357,7 +3372,7 @@ class TradingEngine:
             )
 
             try:
-                response = await asyncio.to_thread(
+                strategy_result = await asyncio.to_thread(
                     get_cached_llm_response,
                     compact_prompt(prompt),
                     COMPACTED_SYSTEM_PROMPT,
@@ -3365,6 +3380,9 @@ class TradingEngine:
                     market_hash=market_hash,
                     model_type=strategy_model_type,
                 )
+                response = strategy_result["response"]
+                llm_provider = strategy_result["provider"]
+                llm_model = strategy_result["model"]
                 # Update snapshot after a real LLM call
                 self._update_last_eval_snapshot(symbol, current_price, rsi, macd_hist)
             except asyncio.TimeoutError:
@@ -3492,13 +3510,16 @@ class TradingEngine:
                         "All other market data remains the same."
                     )
                     try:
-                        corrected_response = await asyncio.to_thread(
+                        correction_result = await asyncio.to_thread(
                             get_cached_llm_response,
                             compact_prompt(correction_prompt),
                             COMPACTED_SYSTEM_PROMPT,
                             30,
                             model_type="actuator",
                         )
+                        corrected_response = correction_result["response"]
+                        llm_provider = correction_result["provider"]
+                        llm_model = correction_result["model"]
                         corrected_signal = create_strategy_from_llm(corrected_response).generate_signal({})
                         validated = validate_signal(
                             corrected_signal,
@@ -3586,6 +3607,8 @@ class TradingEngine:
                     "market_regime": market_regime,
                     "scalping_score": scalping_score,
                     "model_type": getattr(validated, 'model_type', None),
+                    "llm_provider": llm_provider,
+                    "llm_model": llm_model,
                 }
                 await self.notifier.send_notification(msg, summary=decision_summary)
 

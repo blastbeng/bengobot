@@ -76,12 +76,15 @@ def get_llm_response(prompt: str, system_prompt: str = "", model_type: str = "ac
 
     Uses Redis caching with a 5-minute TTL (keyed by prompt + system prompt).
     model_type: "mind" for complex reasoning, "actuator" for fast time‑critical decisions.
+
+    Note: get_cached_llm_response now returns a dict with "response", "provider", "model".
+    This function returns only the response text for backward compatibility.
     """
     from src.llm.cache import get_cached_llm_response  # local import to avoid circular dependency at module level
 
-    response = get_cached_llm_response(prompt, system_prompt, ttl=300, model_type=model_type)
-    if response is None:
+    result = get_cached_llm_response(prompt, system_prompt, ttl=300, model_type=model_type)
+    if result is None:
         # This should not happen because the underlying raw call raises on failure,
         # but guard against unexpected None.
         raise RuntimeError("LLM returned an empty response")
-    return response
+    return result["response"]

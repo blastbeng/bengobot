@@ -82,11 +82,10 @@ async def news():
     for entry in coins:
         symbol = entry["symbol"]
         try:
-            summary = await run_in_threadpool(get_cached_news_summary, symbol)
+            news_data = await run_in_threadpool(get_cached_news_summary, symbol)
+            result[symbol] = news_data["summary"]
         except Exception:
-            summary = "Could not generate summary."
-
-        result[symbol] = summary
+            result[symbol] = "Could not generate summary."
     return result
 
 @app.get("/api/history")
