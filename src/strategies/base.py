@@ -22,6 +22,10 @@ class Signal:
     # --- New: entry condition & timeframe for delayed execution ---
     entry_condition: Optional[Dict[str, Any]] = None   # e.g., {"type": "limit_price", "price": 1.23, "timeout_seconds": 300}
     timeframe: Optional[str] = None   # e.g., "5m", "1h" – needed for indicator-based entry conditions
+    # --- LLM identity for notification tracking ---
+    model_type: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
 
 
 class Strategy:

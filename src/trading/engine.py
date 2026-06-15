@@ -3507,6 +3507,8 @@ class TradingEngine:
                     strategy = LLMStrategy(Signal(action="HOLD", confidence=0.0, reasoning="Failed to parse LLM response after retry"))
             signal = strategy.generate_signal({})
             signal.model_type = strategy_model_type
+            signal.llm_provider = llm_provider
+            signal.llm_model = llm_model
             current_price = ticker['last']
             validated = validate_signal(
                 signal,
@@ -3670,6 +3672,9 @@ class TradingEngine:
                                 "action": "HOLD",
                                 "reason": validated.reasoning,
                                 "new_max_hold_seconds": new_max_hold,
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     # Let the normal _update_position_params apply any other changes
@@ -3687,6 +3692,9 @@ class TradingEngine:
                                 "action": "SELL",
                                 "reason": "Max hold expired, LLM did not extend",
                                 "exit_reason": "max_hold_time_llm_no_extend",
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     await self._execute_signal(
@@ -3737,6 +3745,9 @@ class TradingEngine:
                                 "action": "HOLD",
                                 "reason": validated.reasoning,
                                 "new_stop_loss_pct": new_stop_pct,
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     # Skip further processing for this coin (do not execute a trade)
@@ -3755,6 +3766,9 @@ class TradingEngine:
                                 "action": "SELL",
                                 "reason": "Stop-loss triggered, LLM did not provide new stop",
                                 "exit_reason": "stop_loss_llm_no_action",
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     await self._execute_signal(
@@ -3804,6 +3818,9 @@ class TradingEngine:
                                 "action": "HOLD",
                                 "reason": validated.reasoning,
                                 "new_take_profit_pct": new_tp_pct,
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     # Skip further processing for this coin
@@ -3822,6 +3839,9 @@ class TradingEngine:
                                 "action": "SELL",
                                 "reason": "Take-profit triggered, LLM did not provide new take-profit",
                                 "exit_reason": "take_profit_llm_no_action",
+                                "model_type": strategy_model_type,
+                                "llm_provider": llm_provider,
+                                "llm_model": llm_model,
                             }
                         )
                     await self._execute_signal(
@@ -3855,7 +3875,7 @@ class TradingEngine:
                     if self.notifier:
                         await self.notifier.send_notification(
                             f"🔄 {symbol}: LLM adjusted partial TP levels – holding.",
-                            summary={"symbol": symbol, "action": "HOLD", "reason": "Partial TP levels adjusted by LLM"}
+                            summary={"symbol": symbol, "action": "HOLD", "reason": "Partial TP levels adjusted by LLM", "model_type": strategy_model_type, "llm_provider": llm_provider, "llm_model": llm_model}
                         )
                     return
                 else:
@@ -5230,20 +5250,27 @@ class TradingEngine:
                 await self._save_state()
                 if self.notifier:
                     buy_msg = f"🟢 BUY {symbol}: {order['amount']:.6f} @ {order['price']:.4f}"
+                    buy_summary = {
+                        "symbol": symbol,
+                        "action": "BUY",
+                        "price": order["price"],
+                        "amount": order["amount"],
+                        "confidence": signal.confidence,
+                        "reason": signal.reasoning[:200],
+                        "strategy_type": signal.strategy_type,
+                        "indicators": {
+                            "atr": atr,
+                        },
+                    }
+                    if signal.model_type:
+                        buy_summary["model_type"] = signal.model_type
+                    if signal.llm_provider:
+                        buy_summary["llm_provider"] = signal.llm_provider
+                    if signal.llm_model:
+                        buy_summary["llm_model"] = signal.llm_model
                     await self.notifier.send_notification(
                         buy_msg,
-                        summary={
-                            "symbol": symbol,
-                            "action": "BUY",
-                            "price": order["price"],
-                            "amount": order["amount"],
-                            "confidence": signal.confidence,
-                            "reason": signal.reasoning[:200],
-                            "strategy_type": signal.strategy_type,
-                            "indicators": {
-                                "atr": atr,
-                            },
-                        }
+                        summary=buy_summary,
                     )
             except Exception as e:
                 logger.error(f"Buy order failed for {symbol}: {e}")
@@ -5400,22 +5427,29 @@ class TradingEngine:
                     if pos:
                         pnl_pct = (realized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
                         sell_msg += f" | P&L: {realized_pnl:+.4f} ({pnl_pct:+.2f}%)"
+                    sell_summary = {
+                        "symbol": symbol,
+                        "action": "SELL",
+                        "price": order["price"],
+                        "amount": order["amount"],
+                        "confidence": signal.confidence,
+                        "reason": signal.reasoning[:200],
+                        "exit_reason": exit_reason,
+                        "realized_pnl": realized_pnl,
+                        "strategy_type": signal.strategy_type,
+                        "indicators": {
+                            "atr": atr,
+                        },
+                    }
+                    if signal.model_type:
+                        sell_summary["model_type"] = signal.model_type
+                    if signal.llm_provider:
+                        sell_summary["llm_provider"] = signal.llm_provider
+                    if signal.llm_model:
+                        sell_summary["llm_model"] = signal.llm_model
                     await self.notifier.send_notification(
                         sell_msg,
-                        summary={
-                            "symbol": symbol,
-                            "action": "SELL",
-                            "price": order["price"],
-                            "amount": order["amount"],
-                            "confidence": signal.confidence,
-                            "reason": signal.reasoning[:200],
-                            "exit_reason": exit_reason,
-                            "realized_pnl": realized_pnl,
-                            "strategy_type": signal.strategy_type,
-                            "indicators": {
-                                "atr": atr,
-                            },
-                        }
+                        summary=sell_summary,
                     )
             except Exception as e:
                 logger.error(f"Sell order failed for {symbol}: {e}")
