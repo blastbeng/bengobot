@@ -125,6 +125,7 @@ class TradingEngine:
         self._running = True
         self._last_state_save = 0
         self._last_eval_snapshot: Dict[str, Dict[str, float]] = {}  # symbol -> indicator snapshot
+        self._pending_entries: Dict[str, Dict[str, Any]] = {}  # symbol -> pending entry condition info
 
         # Re-entrancy guards for periodic tasks
         self._reconcile_running = False
@@ -1247,6 +1248,7 @@ class TradingEngine:
         asyncio.create_task(self._periodic_reevaluate())
         asyncio.create_task(self._periodic_pause_check())
         asyncio.create_task(self._periodic_full_market_breadth())
+        asyncio.create_task(self._check_pending_entries())
 
         # Initial coin selection and subscription update
         await self._reevaluate_coins()
@@ -4026,24 +4028,50 @@ class TradingEngine:
             if validated.action != "HOLD":
                 # --- Entry condition check (only for BUY) ---
                 if validated.action == "BUY" and validated.entry_condition is not None:
-                    timeout = validated.entry_condition.get("timeout_seconds", 300)
-                    condition_met = await self._wait_for_entry_condition(
-                        symbol, validated, timeout, assigned_tf
-                    )
-                    if not condition_met:
-                        logger.info(f"Entry condition not met for {symbol} within {timeout}s; skipping trade.")
+                    etype = validated.entry_condition.get("type")
+                    if etype == "delay":
+                        # Delay entries are simple time-based waits – schedule directly
+                        delay_sec = validated.entry_condition.get("delay_seconds", 0)
+                        logger.info(f"Scheduling delayed BUY for {symbol} in {delay_sec}s")
+                        asyncio.create_task(
+                            self._execute_delayed_entry(symbol, validated, assigned_tf, delay_sec)
+                        )
                         if self.notifier:
                             await self.notifier.send_notification(
-                                f"⏭️ Skipping BUY {symbol}: entry condition not met within {timeout}s.",
+                                f"⏳ Delayed entry for {symbol} – executing in {delay_sec}s.",
                                 summary={
                                     "symbol": symbol,
-                                    "action": "SKIP",
-                                    "reason": "Entry condition timeout",
+                                    "action": "WAIT",
+                                    "reason": "Delay entry scheduled",
+                                    "delay_seconds": delay_sec,
                                 }
                             )
-                        return
+                        return  # do NOT execute now
 
-                    logger.info(f"Entry condition met for {symbol}; proceeding to execute.")
+                    timeout = validated.entry_condition.get("timeout_seconds", 300)
+                    deadline = time.time() + timeout
+                    # Store for background checking – do NOT block the main loop
+                    self._pending_entries[symbol] = {
+                        "signal": validated,
+                        "deadline": deadline,
+                        "timeframe": assigned_tf,
+                        "condition": validated.entry_condition,
+                    }
+                    logger.info(
+                        f"Queued entry condition for {symbol} (type={etype}, deadline in {timeout}s). "
+                        f"Will monitor in background."
+                    )
+                    if self.notifier:
+                        await self.notifier.send_notification(
+                            f"⏳ Waiting for entry condition on {symbol} "
+                            f"(type={etype}, timeout {timeout}s).",
+                            summary={
+                                "symbol": symbol,
+                                "action": "WAIT",
+                                "reason": "Entry condition pending",
+                            }
+                        )
+                    return  # do NOT execute now
 
                 if trading_paused:
                     logger.info(f"Ignoring {validated.action} signal for {symbol}: trading is paused.")
@@ -5341,6 +5369,7 @@ class TradingEngine:
                 self.positions.pop(symbol, None)
                 self._strategy_intervals.pop(symbol, None)
                 self._last_strategy_eval.pop(symbol, None)
+                self._pending_entries.pop(symbol, None)
                 await self._remove_coin_if_paused(symbol)
                 self.trade_history.append(order)
                 await asyncio.to_thread(insert_trade, order)
@@ -5461,118 +5490,177 @@ class TradingEngine:
         # (the risk management loop will handle stop/tp)
         return True
 
-    async def _wait_for_entry_condition(self, symbol: str, signal: Signal, timeout_seconds: float, timeframe: str) -> bool:
-        """Wait for the entry condition to be met; return True if met, False if timeout."""
-        entry = signal.entry_condition
-        if entry is None:
-            return True  # no condition – execute immediately
-
-        etype = entry.get("type")
-        deadline = time.time() + timeout_seconds
-        logger.info(f"Waiting for entry condition '{etype}' on {symbol} (timeout {timeout_seconds}s)")
-
-        while time.time() < deadline:
-            if etype == "limit_price":
-                target_price = entry["price"]
-                ticker = self.ws_manager.get_ticker(symbol)
-                if ticker is None:
-                    try:
-                        async with self._exchange_semaphore:
-                            ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
-                    except Exception as e:
-                        logger.debug(f"Failed to fetch ticker for {symbol}: {e}")
-                        await asyncio.sleep(1)
+    async def _check_pending_entries(self):
+        """Periodically check pending entry conditions and execute if met."""
+        await asyncio.sleep(2)  # short initial delay
+        while self._running:
+            try:
+                now = time.time()
+                for symbol in list(self._pending_entries.keys()):
+                    entry = self._pending_entries.get(symbol)
+                    if entry is None:
                         continue
-                current_price = ticker.get("last", 0) if ticker else 0
-                if current_price > 0 and current_price <= target_price:
-                    logger.info(f"Limit price condition met for {symbol}: {current_price} <= {target_price}")
-                    return True
+                    if now >= entry["deadline"]:
+                        # Timeout – clear and notify
+                        logger.info(f"Entry condition timeout for {symbol}")
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"⏭️ Entry condition timeout for {symbol} – skipping BUY.",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SKIP",
+                                    "reason": "Entry condition timeout",
+                                }
+                            )
+                        del self._pending_entries[symbol]
+                        continue
 
-            elif etype == "rsi_threshold":
-                target_rsi = entry["rsi_below"]
+                    # Check the condition (non‑blocking)
+                    condition_met = await self._check_entry_condition_once(
+                        symbol, entry["condition"], entry["timeframe"]
+                    )
+                    if condition_met:
+                        logger.info(f"Entry condition met for {symbol}, executing BUY")
+                        # Remove from pending before executing to avoid re‑trigger
+                        signal = entry["signal"]
+                        del self._pending_entries[symbol]
+                        # Check trading pause again (may have changed)
+                        paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+                        if paused:
+                            logger.info(f"Ignoring queued BUY {symbol}: trading is now paused.")
+                            if self.notifier:
+                                await self.notifier.send_notification(
+                                    f"⏸️ Queued BUY for {symbol} skipped – trading paused.",
+                                    summary={"symbol": symbol, "action": "SKIP", "reason": "Trading paused"}
+                                )
+                        else:
+                            await self._execute_signal(
+                                symbol,
+                                signal,
+                                timeframe=entry["timeframe"],
+                                atr=None,
+                                spread_pct=None,
+                                order_book=None,
+                            )
+            except Exception as e:
+                logger.error(f"Error checking pending entries: {e}", exc_info=True)
+            await asyncio.sleep(5)  # check every 5 seconds
+
+    async def _check_entry_condition_once(
+        self, symbol: str, condition: Dict[str, Any], timeframe: str
+    ) -> bool:
+        """Check a single entry condition immediately. Return True if met."""
+        etype = condition.get("type")
+        if etype == "limit_price":
+            target_price = condition["price"]
+            ticker = self.ws_manager.get_ticker(symbol)
+            if ticker is None:
                 try:
                     async with self._exchange_semaphore:
-                        ohlcv = await asyncio.to_thread(
-                            get_multi_timeframe_ohlcv, self.exchange, symbol, [timeframe], limit=50
-                        )
-                except Exception as e:
-                    logger.debug(f"OHLCV fetch failed for {symbol}: {e}")
-                    await asyncio.sleep(1)
-                    continue
-                if timeframe in ohlcv and ohlcv[timeframe]:
-                    candles = ohlcv[timeframe]
-                    # compute RSI (14) using imported function
-                    rsi = compute_rsi([c[4] for c in candles])
-                    if rsi is not None and rsi <= target_rsi:
-                        logger.info(f"RSI condition met for {symbol}: RSI={rsi:.2f} <= {target_rsi}")
-                        return True
+                        ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+                except Exception:
+                    return False
+            current_price = ticker.get("last", 0) if ticker else 0
+            return current_price > 0 and current_price <= target_price
 
-            elif etype == "order_book_depth":
-                min_vol = entry["min_ask_volume"]
-                ob = self.ws_manager.get_order_book(symbol)
-                if ob is None:
-                    try:
-                        async with self._exchange_semaphore:
-                            ob = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
-                    except Exception as e:
-                        logger.debug(f"Order book fetch failed for {symbol}: {e}")
-                        await asyncio.sleep(1)
-                        continue
-                if ob:
-                    asks = ob.get("asks", [])
-                    bids = ob.get("bids", [])
-                    if asks and bids:
-                        mid = (asks[0][0] + bids[0][0]) / 2
-                        cum_vol = sum(a[1] for a in asks if a[0] <= mid * 1.01)
-                        if cum_vol >= min_vol:
-                            logger.info(f"Order book depth condition met for {symbol}: cum_ask_vol={cum_vol:.2f} >= {min_vol}")
-                            return True
+        elif etype == "rsi_threshold":
+            target_rsi = condition["rsi_below"]
+            try:
+                async with self._exchange_semaphore:
+                    ohlcv = await asyncio.to_thread(
+                        get_multi_timeframe_ohlcv, self.exchange, symbol, [timeframe], limit=50
+                    )
+            except Exception:
+                return False
+            if timeframe in ohlcv and ohlcv[timeframe]:
+                candles = ohlcv[timeframe]
+                rsi = compute_rsi([c[4] for c in candles])
+                return rsi is not None and rsi <= target_rsi
+            return False
 
-            elif etype == "delay":
-                delay_sec = entry["delay_seconds"]
-                logger.info(f"Delay entry for {symbol}: waiting {delay_sec}s")
-                await asyncio.sleep(delay_sec)
+        elif etype == "order_book_depth":
+            min_vol = condition["min_ask_volume"]
+            ob = self.ws_manager.get_order_book(symbol)
+            if ob is None:
+                try:
+                    async with self._exchange_semaphore:
+                        ob = await asyncio.to_thread(get_order_book, self.exchange, symbol, 20)
+                except Exception:
+                    return False
+            if ob:
+                asks = ob.get("asks", [])
+                bids = ob.get("bids", [])
+                if asks and bids:
+                    mid = (asks[0][0] + bids[0][0]) / 2
+                    cum_vol = sum(a[1] for a in asks if a[0] <= mid * 1.01)
+                    return cum_vol >= min_vol
+            return False
+
+        elif etype == "delay":
+            # Delay conditions are handled by _execute_delayed_entry, not the
+            # pending-entries system. If we somehow reach here, treat as not met
+            # so the deadline handler can deal with it.
+            return False
+
+        elif etype == "indicator_combo":
+            conditions = condition["conditions"]
+            try:
+                async with self._exchange_semaphore:
+                    ohlcv = await asyncio.to_thread(
+                        get_multi_timeframe_ohlcv, self.exchange, symbol, [timeframe], limit=50
+                    )
+            except Exception:
+                return False
+            if timeframe in ohlcv and ohlcv[timeframe]:
+                candles = ohlcv[timeframe]
+                closes = [c[4] for c in candles]
+                for cond in conditions:
+                    ind = cond["indicator"]
+                    thresh = cond["threshold"]
+                    direction = cond["direction"]
+                    if ind == "rsi":
+                        rsi_val = compute_rsi(closes)
+                        if rsi_val is None or (direction == "below" and rsi_val > thresh) or (direction == "above" and rsi_val < thresh):
+                            return False
+                    elif ind == "macd_hist":
+                        macd_vals = compute_macd(closes)
+                        macd_hist_val = macd_vals[2][-1] if macd_vals and len(macd_vals[2]) > 0 else None
+                        if macd_hist_val is None or (direction == "below" and macd_hist_val > thresh) or (direction == "above" and macd_hist_val < thresh):
+                            return False
                 return True
+            return False
 
-            elif etype == "indicator_combo":
-                conditions = entry["conditions"]
-                try:
-                    async with self._exchange_semaphore:
-                        ohlcv = await asyncio.to_thread(
-                            get_multi_timeframe_ohlcv, self.exchange, symbol, [timeframe], limit=50
-                        )
-                except Exception as e:
-                    logger.debug(f"OHLCV fetch failed for {symbol}: {e}")
-                    await asyncio.sleep(1)
-                    continue
-                if timeframe in ohlcv and ohlcv[timeframe]:
-                    candles = ohlcv[timeframe]
-                    closes = [c[4] for c in candles]
-                    all_met = True
-                    for cond in conditions:
-                        ind = cond["indicator"]
-                        thresh = cond["threshold"]
-                        direction = cond["direction"]
-                        if ind == "rsi":
-                            rsi_val = compute_rsi(closes)
-                            if rsi_val is None or (direction == "below" and rsi_val > thresh) or (direction == "above" and rsi_val < thresh):
-                                all_met = False
-                                break
-                        elif ind == "macd_hist":
-                            macd_vals = compute_macd(closes)
-                            macd_hist_val = macd_vals[2][-1] if macd_vals and len(macd_vals[2]) > 0 else None
-                            if macd_hist_val is None or (direction == "below" and macd_hist_val > thresh) or (direction == "above" and macd_hist_val < thresh):
-                                all_met = False
-                                break
-                        # other indicators can be added later
-                    if all_met:
-                        logger.info(f"Indicator combo condition met for {symbol}")
-                        return True
-
-            await asyncio.sleep(1.0)
-
-        logger.warning(f"Entry condition timeout for {symbol} ({etype})")
         return False
+
+    async def _execute_delayed_entry(self, symbol: str, signal, timeframe: str, delay_seconds: float):
+        """Execute a delayed entry after waiting for the specified duration."""
+        logger.info(f"Delayed entry: waiting {delay_seconds}s for {symbol}")
+        await asyncio.sleep(delay_seconds)
+        if not self._running:
+            return
+        # Check if the symbol already has a position (may have been bought by another path)
+        if symbol in self.positions:
+            logger.info(f"Skipping delayed BUY for {symbol}: position already exists.")
+            return
+        # Check trading pause
+        paused = await asyncio.to_thread(self.redis.get, "trading:paused")
+        if paused:
+            logger.info(f"Ignoring delayed BUY {symbol}: trading is now paused.")
+            if self.notifier:
+                await self.notifier.send_notification(
+                    f"⏸️ Delayed BUY for {symbol} skipped – trading paused.",
+                    summary={"symbol": symbol, "action": "SKIP", "reason": "Trading paused"}
+                )
+            return
+        logger.info(f"Delay elapsed for {symbol}, executing BUY")
+        await self._execute_signal(
+            symbol,
+            signal,
+            timeframe=timeframe,
+            atr=None,
+            spread_pct=None,
+            order_book=None,
+        )
 
     def _choose_model_tier(
         self,
@@ -5840,6 +5928,8 @@ class TradingEngine:
 
     async def _remove_coin_if_paused(self, symbol: str):
         """If trading is paused, remove the symbol from current_coins to prevent new signals."""
+        # Always clear any pending entry for this symbol
+        self._pending_entries.pop(symbol, None)
         paused_raw = await asyncio.to_thread(self.redis.get, "trading:paused")
         if paused_raw and paused_raw == b"1":
             self.current_coins = [c for c in self.current_coins if c["symbol"] != symbol]
