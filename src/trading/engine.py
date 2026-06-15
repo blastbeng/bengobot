@@ -2620,27 +2620,30 @@ class TradingEngine:
                 return
 
         # --- Cooldown after a losing trade (LLM-defined) ---
-        last_loss = self.last_loss_time.get(symbol)
-        if last_loss is not None:
-            cooldown = self.cooldown_durations.get(symbol, 0)
-            if cooldown > 0:
-                elapsed = time.time() - last_loss
-                if elapsed < cooldown:
-                    remaining = cooldown - elapsed
-                    logger.info(
-                        f"Skipping {symbol}: cooldown active ({remaining:.0f}s remaining after loss)"
-                    )
-                    if self.notifier:
-                        await self.notifier.send_notification(
-                            f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s",
-                            summary={
-                                "symbol": symbol,
-                                "action": "SKIP",
-                                "reason": "Cooldown active",
-                                "cooldown_remaining_seconds": remaining,
-                            }
+        # Only apply cooldown if there is NO open position for this symbol.
+        # An open position must be managed regardless of cooldown.
+        if symbol not in self.positions:
+            last_loss = self.last_loss_time.get(symbol)
+            if last_loss is not None:
+                cooldown = self.cooldown_durations.get(symbol, 0)
+                if cooldown > 0:
+                    elapsed = time.time() - last_loss
+                    if elapsed < cooldown:
+                        remaining = cooldown - elapsed
+                        logger.info(
+                            f"Skipping {symbol}: cooldown active ({remaining:.0f}s remaining after loss)"
                         )
-                    return
+                        if self.notifier:
+                            await self.notifier.send_notification(
+                                f"⏳ Skipping {symbol}: cooldown {remaining:.0f}s",
+                                summary={
+                                    "symbol": symbol,
+                                    "action": "SKIP",
+                                    "reason": "Cooldown active",
+                                    "cooldown_remaining_seconds": remaining,
+                                }
+                            )
+                        return
 
         # If trading is paused and we have no open position, skip entirely
         if trading_paused and symbol not in self.positions:
