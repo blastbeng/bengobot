@@ -217,7 +217,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
             articles.extend(_fetch_rss(symbol))
         source_time = time.time() - source_start
         if source_time > 2.0:
-            logger.warning(f"Slow news source '{source}' for {symbol}: {source_time:.2f}s")
+            logger.debug(f"Slow news source '{source}' for {symbol}: {source_time:.2f}s")
 
     # Deduplicate by URL
     seen = set()
@@ -240,7 +240,7 @@ def fetch_news_for_symbol(symbol: str) -> List[Dict[str, str]]:
     total_time = time.time() - start_time
     logger.debug(f"News for {symbol}: {len(unique)} articles from {len(enabled)} sources in {total_time:.2f}s")
     if total_time > 5.0:
-        logger.warning(f"News fetch for {symbol} took {total_time:.2f}s – consider reducing sources or increasing cache TTL")
+        logger.debug(f"News fetch for {symbol} took {total_time:.2f}s – consider reducing sources or increasing cache TTL")
 
     return unique
 
