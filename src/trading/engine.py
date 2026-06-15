@@ -4904,7 +4904,7 @@ class TradingEngine:
                             self._last_strategy_eval.pop(symbol, None)
                             logger.info(
                                 f"Stop-loss triggered for {symbol} at {current_price} – "
-                                f"asking LLM (review {pos['_stop_loss_review_count']}/{self.MAX_STOP_LOSS_REVIEWS})."
+                                f"asking LLM (review {pos['_stop_loss_review_count']}/{MAX_STOP_LOSS_REVIEWS})."
                             )
                             if self.notifier:
                                 await self.notifier.send_notification(
@@ -4920,7 +4920,7 @@ class TradingEngine:
                             # Already waiting for LLM; do nothing (avoid re-triggering)
                             logger.debug(
                                 f"Stop-loss still triggered for {symbol}, waiting for LLM response "
-                                f"(review {review_count}/{self.MAX_STOP_LOSS_REVIEWS})."
+                                f"(review {review_count}/{MAX_STOP_LOSS_REVIEWS})."
                             )
                 elif current_price >= pos["take_profit"]:
                     # Always ask the LLM whether to sell or adjust the take-profit, but cap reviews.
@@ -4956,7 +4956,7 @@ class TradingEngine:
                         self._last_strategy_eval.pop(symbol, None)
                         logger.info(
                             f"Take-profit triggered for {symbol} at {current_price} – "
-                            f"asking LLM (review {pos['_take_profit_review_count']}/{self.MAX_TAKE_PROFIT_REVIEWS})."
+                            f"asking LLM (review {pos['_take_profit_review_count']}/{MAX_TAKE_PROFIT_REVIEWS})."
                         )
                         if self.notifier:
                             await self.notifier.send_notification(
@@ -4972,7 +4972,7 @@ class TradingEngine:
                         # Already waiting for LLM; do nothing
                         logger.debug(
                             f"Take-profit still triggered for {symbol}, waiting for LLM response "
-                            f"(review {review_count}/{self.MAX_TAKE_PROFIT_REVIEWS})."
+                            f"(review {review_count}/{MAX_TAKE_PROFIT_REVIEWS})."
                         )
             except Exception as e:
                 logger.error(f"Risk check failed for {symbol}: {e}")
