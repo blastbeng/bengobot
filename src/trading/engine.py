@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 COIN_REVALUATION_INTERVAL = 900  # seconds (15 minutes)
 DEFAULT_STRATEGY_INTERVAL = 600   # fallback when no timeframe or no coins (10 minutes)
 MIN_COIN_REVALUATION_INTERVAL = 300  # seconds (5 minutes) – prevents rapid toggling
-MIN_LLM_PAUSE_DURATION = 1800  # seconds (30 min) – LLM cannot resume before this
+MIN_LLM_PAUSE_DURATION = 3600  # seconds (60 min) – LLM cannot resume before this
 MAX_STOP_LOSS_REVIEWS = 10   # force-sell after this many consecutive stop-loss reviews
 MAX_TAKE_PROFIT_REVIEWS = 10   # force-sell after this many consecutive take-profit reviews
 
