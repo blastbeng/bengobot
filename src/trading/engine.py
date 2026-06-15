@@ -1826,6 +1826,20 @@ class TradingEngine:
             "volume_trends": volume_trends,
         }
         market_hash = compute_market_hash(market_snapshot)
+        # Compute prompt complexity for temperature selection
+        _st_values = [abs(v) for v in sentiment_trend.values() if v is not None]
+        _st_mag = max(_st_values) if _st_values else None
+        coin_selection_complexity = self._compute_prompt_complexity(
+            num_candidates=len(sample_pairs),
+            market_breadth=market_breadth,
+            fear_greed=fear_greed,
+            volatility_percentile=None,
+            sentiment_trend_magnitude=_st_mag,
+            conflicting_signals=False,
+            is_critical=False,
+        )
+        effective_temp = self._get_effective_temperature("mind", coin_selection_complexity)
+
         parsed = {}
         max_retries = 2
         response = None
@@ -1840,6 +1854,7 @@ class TradingEngine:
                     300,
                     market_hash=market_hash,
                     model_type="mind",
+                    temperature=effective_temp,
                 )
                 response = result["response"]
                 llm_provider = result["provider"]
@@ -1888,6 +1903,7 @@ class TradingEngine:
                     correction_result = await asyncio.to_thread(
                         get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 120,
                         model_type="actuator",
+                        temperature=effective_temp,
                     )
                     response = correction_result["response"]
                     llm_provider = correction_result["provider"]
@@ -2399,10 +2415,22 @@ class TradingEngine:
                 "multiplier is often better than doing nothing."
             )
 
+            pause_resume_complexity = self._compute_prompt_complexity(
+                num_candidates=0,
+                market_breadth=market_breadth,
+                fear_greed=fear_greed,
+                volatility_percentile=None,
+                sentiment_trend_magnitude=None,
+                conflicting_signals=False,
+                is_critical=False,
+            )
+            effective_temp = self._get_effective_temperature("actuator", pause_resume_complexity)
+
             try:
                 pause_result = await asyncio.to_thread(
                     get_cached_llm_response, compact_prompt(prompt), COMPACTED_SYSTEM_PROMPT, 120,
                     model_type="actuator",
+                    temperature=effective_temp,
                 )
                 response = pause_result["response"]
                 llm_provider = pause_result["provider"]
@@ -3410,6 +3438,22 @@ class TradingEngine:
                 is_critical=is_critical,
             )
 
+            # Compute prompt complexity for temperature selection
+            _conflicting = False
+            if rsi is not None and macd_hist is not None:
+                if (rsi < 30 and macd_hist < 0) or (rsi > 70 and macd_hist > 0):
+                    _conflicting = True
+            strategy_complexity = self._compute_prompt_complexity(
+                num_candidates=len(self.current_coins),
+                market_breadth=getattr(self, '_market_breadth', None),
+                fear_greed=fear_greed,
+                volatility_percentile=atr_percentile,
+                sentiment_trend_magnitude=abs(sentiment_trend_val) if sentiment_trend_val is not None else None,
+                conflicting_signals=_conflicting,
+                is_critical=is_critical,
+            )
+            effective_temp = self._get_effective_temperature(strategy_model_type, strategy_complexity)
+
             try:
                 strategy_result = await asyncio.to_thread(
                     get_cached_llm_response,
@@ -3418,6 +3462,7 @@ class TradingEngine:
                     60,
                     market_hash=market_hash,
                     model_type=strategy_model_type,
+                    temperature=effective_temp,
                 )
                 response = strategy_result["response"]
                 llm_provider = strategy_result["provider"]
@@ -3517,6 +3562,7 @@ class TradingEngine:
                     response2 = await asyncio.to_thread(
                         get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 30,
                         model_type="actuator",
+                        temperature=effective_temp,
                     )
                     # Update snapshot after retry call
                     self._update_last_eval_snapshot(symbol, current_price, rsi, macd_hist)
@@ -3565,6 +3611,7 @@ class TradingEngine:
                             COMPACTED_SYSTEM_PROMPT,
                             30,
                             model_type="actuator",
+                            temperature=effective_temp,
                         )
                         corrected_response = correction_result["response"]
                         llm_provider = correction_result["provider"]
@@ -5759,6 +5806,68 @@ class TradingEngine:
                 complexity += 1
 
         return "mind" if complexity >= 2 else "actuator"
+
+    def _compute_prompt_complexity(
+        self,
+        num_candidates: int = 0,
+        market_breadth: Optional[Dict[str, Any]] = None,
+        fear_greed: Optional[Dict[str, Any]] = None,
+        volatility_percentile: Optional[float] = None,
+        sentiment_trend_magnitude: Optional[float] = None,
+        conflicting_signals: bool = False,
+        is_critical: bool = False,
+    ) -> float:
+        """Return a complexity score between 0.0 (simple) and 1.0 (very complex)."""
+        score = 0.0
+        # More candidates → more complex
+        if num_candidates > 20:
+            score += 0.2
+        elif num_candidates > 10:
+            score += 0.1
+
+        # Extreme market breadth (very high or very low) adds complexity
+        if market_breadth:
+            pos_pct = market_breadth.get("positive_pct", 50)
+            if pos_pct > 80 or pos_pct < 20:
+                score += 0.15
+
+        # Extreme fear/greed
+        if fear_greed:
+            fg = fear_greed.get("value", 50)
+            if fg <= 25 or fg >= 75:
+                score += 0.1
+
+        # High volatility percentile
+        if volatility_percentile is not None and (volatility_percentile > 80 or volatility_percentile < 20):
+            score += 0.1
+
+        # Strong sentiment swing
+        if sentiment_trend_magnitude is not None and sentiment_trend_magnitude > 0.2:
+            score += 0.1
+
+        # Conflicting technical signals
+        if conflicting_signals:
+            score += 0.15
+
+        # Critical decision (stop-loss, take-profit, etc.)
+        if is_critical:
+            score += 0.2
+
+        return min(1.0, score)
+
+    def _get_effective_temperature(self, model_type: str, complexity: float) -> float:
+        """Return the temperature to use for a given model_type and complexity score (0-1)."""
+        from src.config.settings import Settings
+        raw = settings.LLM_MIND_TEMPERATURE if model_type == "mind" else settings.LLM_ACTUATOR_TEMPERATURE
+        parsed = Settings.parse_temperature_range(raw)
+        if parsed is None:
+            # Fall back to global LLM_TEMPERATURE
+            return settings.LLM_TEMPERATURE
+        lo, hi = parsed
+        if lo == hi:
+            return lo
+        # Map complexity 0→lo, 1→hi
+        return lo + (hi - lo) * complexity
 
     def _update_last_eval_snapshot(self, symbol: str, price: float, rsi: Optional[float], macd_hist: Optional[float]):
         self._last_eval_snapshot[symbol] = {

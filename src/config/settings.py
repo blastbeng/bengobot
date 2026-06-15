@@ -216,6 +216,50 @@ class Settings(BaseSettings):
             raise ValueError("LLM_TEMPERATURE must be between 0.0 and 2.0")
         return v
 
+    # Per‑role temperature overrides (optional).
+    # Can be a single float (e.g. "0.2") or a range "min-max" (e.g. "0.2-0.5").
+    # If a range is given, the engine will pick a temperature inside it
+    # based on prompt complexity (higher complexity → higher temperature).
+    # If not set, the global LLM_TEMPERATURE is used.
+    LLM_MIND_TEMPERATURE: Optional[str] = None
+    LLM_ACTUATOR_TEMPERATURE: Optional[str] = None
+
+    @field_validator("LLM_MIND_TEMPERATURE", "LLM_ACTUATOR_TEMPERATURE")
+    @classmethod
+    def validate_role_temperature(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v.strip() == "":
+            return None
+        Settings.parse_temperature_range(v)  # raises ValueError if invalid
+        return v
+
+    @staticmethod
+    def parse_temperature_range(value: Optional[str]) -> Optional[tuple]:
+        """Parse a temperature setting into (min, max) or None if not set.
+
+        Returns None for unset; (val, val) for a single float; (min, max) for a range.
+        """
+        if value is None or value.strip() == "":
+            return None
+        value = value.strip()
+        if "-" in value:
+            parts = value.split("-", 1)
+            try:
+                lo = float(parts[0].strip())
+                hi = float(parts[1].strip())
+                if lo < 0.0 or hi > 2.0 or lo > hi:
+                    raise ValueError
+                return (lo, hi)
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid temperature range: {value!r}")
+        else:
+            try:
+                v = float(value)
+                if not (0.0 <= v <= 2.0):
+                    raise ValueError
+                return (v, v)
+            except (ValueError, TypeError):
+                raise ValueError(f"Invalid temperature value: {value!r}")
+
     # LLM timeout (seconds) for HTTP requests
     LLM_TIMEOUT: float = 300.0
 

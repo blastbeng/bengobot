@@ -13,6 +13,7 @@ def get_cached_llm_response(
     ttl: int = 300,
     market_hash: str = None,
     model_type: str = "actuator",
+    temperature: Optional[float] = None,
 ) -> Optional[dict]:
     """
     Get an LLM response, using Redis cache to avoid duplicate calls.
@@ -47,10 +48,12 @@ def get_cached_llm_response(
 
     # Build cache key (unchanged logic)
     if market_hash:
-        cache_key = f"llm:{model_type}:market:{market_hash}"
+        cache_key = f"llm:{model_type}:market:{market_hash}:t{int(temperature * 100) if temperature is not None else 'def'}"
     else:
         key_data = json.dumps(
-            {"prompt": prompt, "system": system_prompt, "model_type": model_type}, sort_keys=True
+            {"prompt": prompt, "system": system_prompt, "model_type": model_type,
+             "temperature": temperature if temperature is not None else settings.LLM_TEMPERATURE},
+            sort_keys=True
         )
         cache_key = f"llm:{hashlib.sha256(key_data.encode()).hexdigest()}"
 
@@ -73,10 +76,10 @@ def get_cached_llm_response(
     try:
         if provider == "openai":
             from src.llm.llm_client import _get_openai_response
-            response_text = _get_openai_response(prompt, system_prompt, model=model, base_url=base_url, api_key=api_key)
+            response_text = _get_openai_response(prompt, system_prompt, model=model, base_url=base_url, api_key=api_key, temperature=temperature)
         else:
             from src.llm.llm_client import _get_ollama_response
-            response_text = _get_ollama_response(prompt, system_prompt, model=model, base_url=base_url, api_key=api_key)
+            response_text = _get_ollama_response(prompt, system_prompt, model=model, base_url=base_url, api_key=api_key, temperature=temperature)
     except Exception as e:
         if provider == "ollama":
             # --- Fallback to OpenAI-compatible provider ---
@@ -96,6 +99,7 @@ def get_cached_llm_response(
                         model=fallback_model,
                         base_url=fallback_base_url,
                         api_key=fallback_api_key,
+                        temperature=temperature,
                     )
                     used_provider = "openai"
                     used_model = fallback_model

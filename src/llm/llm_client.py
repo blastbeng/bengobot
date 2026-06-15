@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 import httpx
 
@@ -8,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_ollama_response(prompt: str, system_prompt: str = "", model: str = None,
-                         base_url: str = None, api_key: str = None) -> str:
+                         base_url: str = None, api_key: str = None,
+                         temperature: Optional[float] = None) -> str:
     """Send a prompt to the configured Ollama model and return the response text."""
     url = f"{(base_url or settings.OLLAMA_BASE_URL).rstrip('/')}/api/chat"
     headers = {"Content-Type": "application/json"}
@@ -25,7 +27,7 @@ def _get_ollama_response(prompt: str, system_prompt: str = "", model: str = None
         "model": model or settings.OLLAMA_MODEL,
         "messages": messages,
         "stream": False,
-        "temperature": settings.LLM_TEMPERATURE,
+        "temperature": temperature if temperature is not None else settings.LLM_TEMPERATURE,
     }
 
     try:
@@ -39,7 +41,8 @@ def _get_ollama_response(prompt: str, system_prompt: str = "", model: str = None
 
 
 def _get_openai_response(prompt: str, system_prompt: str = "", model: str = None,
-                         base_url: str = None, api_key: str = None) -> str:
+                         base_url: str = None, api_key: str = None,
+                         temperature: Optional[float] = None) -> str:
     """Send a prompt to the configured OpenAI-compatible API and return the response text."""
     url = f"{(base_url or settings.OPENAI_BASE_URL).rstrip('/')}/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -58,7 +61,7 @@ def _get_openai_response(prompt: str, system_prompt: str = "", model: str = None
     payload = {
         "model": model or settings.OPENAI_MODEL,
         "messages": messages,
-        "temperature": settings.LLM_TEMPERATURE,
+        "temperature": temperature if temperature is not None else settings.LLM_TEMPERATURE,
     }
 
     try:
