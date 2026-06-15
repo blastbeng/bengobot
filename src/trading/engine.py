@@ -1851,14 +1851,17 @@ class TradingEngine:
         llm_model = None
         for attempt in range(max_retries + 1):
             try:
-                result = await asyncio.to_thread(
-                    get_cached_llm_response,
-                    compact_prompt(prompt),
-                    COMPACTED_SYSTEM_PROMPT,
-                    300,
-                    market_hash=market_hash,
-                    model_type="mind",
-                    temperature=effective_temp,
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        get_cached_llm_response,
+                        compact_prompt(prompt),
+                        COMPACTED_SYSTEM_PROMPT,
+                        300,
+                        market_hash=market_hash,
+                        model_type="mind",
+                        temperature=effective_temp,
+                    ),
+                    timeout=settings.LLM_TIMEOUT
                 )
                 response = result["response"]
                 llm_provider = result["provider"]
@@ -1904,10 +1907,13 @@ class TradingEngine:
                     "Here is the original request:\n\n" + prompt
                 )
                 try:
-                    correction_result = await asyncio.to_thread(
-                        get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 120,
-                        model_type="actuator",
-                        temperature=effective_temp,
+                    correction_result = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 120,
+                            model_type="actuator",
+                            temperature=effective_temp,
+                        ),
+                        timeout=settings.LLM_TIMEOUT
                     )
                     response = correction_result["response"]
                     llm_provider = correction_result["provider"]
@@ -2431,10 +2437,13 @@ class TradingEngine:
             effective_temp = self._get_effective_temperature("actuator", pause_resume_complexity)
 
             try:
-                pause_result = await asyncio.to_thread(
-                    get_cached_llm_response, compact_prompt(prompt), COMPACTED_SYSTEM_PROMPT, 120,
-                    model_type="actuator",
-                    temperature=effective_temp,
+                pause_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        get_cached_llm_response, compact_prompt(prompt), COMPACTED_SYSTEM_PROMPT, 120,
+                        model_type="actuator",
+                        temperature=effective_temp,
+                    ),
+                    timeout=settings.LLM_TIMEOUT
                 )
                 response = pause_result["response"]
                 llm_provider = pause_result["provider"]
@@ -3462,14 +3471,17 @@ class TradingEngine:
             effective_temp = self._get_effective_temperature(strategy_model_type, strategy_complexity)
 
             try:
-                strategy_result = await asyncio.to_thread(
-                    get_cached_llm_response,
-                    compact_prompt(prompt),
-                    COMPACTED_SYSTEM_PROMPT,
-                    60,
-                    market_hash=market_hash,
-                    model_type=strategy_model_type,
-                    temperature=effective_temp,
+                strategy_result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        get_cached_llm_response,
+                        compact_prompt(prompt),
+                        COMPACTED_SYSTEM_PROMPT,
+                        60,
+                        market_hash=market_hash,
+                        model_type=strategy_model_type,
+                        temperature=effective_temp,
+                    ),
+                    timeout=settings.LLM_TIMEOUT
                 )
                 response = strategy_result["response"]
                 llm_provider = strategy_result["provider"]
@@ -3566,10 +3578,13 @@ class TradingEngine:
                     "Here is the original request:\n\n" + prompt
                 )
                 try:
-                    response2 = await asyncio.to_thread(
-                        get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 30,
-                        model_type="actuator",
-                        temperature=effective_temp,
+                    response2 = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            get_cached_llm_response, compact_prompt(correction_prompt), COMPACTED_SYSTEM_PROMPT, 30,
+                            model_type="actuator",
+                            temperature=effective_temp,
+                        ),
+                        timeout=settings.LLM_TIMEOUT
                     )
                     # Update snapshot after retry call
                     self._update_last_eval_snapshot(symbol, current_price, rsi, macd_hist)
@@ -3612,13 +3627,16 @@ class TradingEngine:
                         "All other market data remains the same."
                     )
                     try:
-                        correction_result = await asyncio.to_thread(
-                            get_cached_llm_response,
-                            compact_prompt(correction_prompt),
-                            COMPACTED_SYSTEM_PROMPT,
-                            30,
-                            model_type="actuator",
-                            temperature=effective_temp,
+                        correction_result = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                get_cached_llm_response,
+                                compact_prompt(correction_prompt),
+                                COMPACTED_SYSTEM_PROMPT,
+                                30,
+                                model_type="actuator",
+                                temperature=effective_temp,
+                            ),
+                            timeout=settings.LLM_TIMEOUT
                         )
                         corrected_response = correction_result["response"]
                         llm_provider = correction_result["provider"]
