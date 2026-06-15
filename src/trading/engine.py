@@ -2748,7 +2748,7 @@ class TradingEngine:
                 try:
                     async with self._exchange_semaphore:
                         ohlcv_data = await asyncio.to_thread(
-                            get_multi_timeframe_ohlcv, self.exchange, symbol, settings.OHLCV_TIMEFRAMES, limit=50
+                            get_multi_timeframe_ohlcv, self.exchange, symbol, settings.OHLCV_TIMEFRAMES, limit=100
                         )
                 except Exception as e:
                     logger.warning(f"OHLCV fetch failed for {symbol}: {e}")
@@ -3643,14 +3643,20 @@ class TradingEngine:
                     ind_parts.append(f"RSI={rsi:.1f}")
                 if macd is not None and macd_signal is not None:
                     ind_parts.append(f"MACD={macd:.4f}/{macd_signal:.4f}")
+                    if macd_hist is not None:
+                        ind_parts.append(f"Hist={macd_hist:.4f}")
                 if bb_upper is not None:
-                    ind_parts.append(f"BB={bb_lower:.2f}-{bb_upper:.2f}")
+                    ind_parts.append(f"BB={bb_lower:.2f}/{bb_middle:.2f}/{bb_upper:.2f}")
                 if ema_9 is not None and ema_21 is not None:
                     ind_parts.append(f"EMA9/21={ema_9:.2f}/{ema_21:.2f}")
                 if stochastic_k is not None:
                     ind_parts.append(f"StochK={stochastic_k:.1f}")
+                    if stochastic_d is not None:
+                        ind_parts.append(f"StochD={stochastic_d:.1f}")
                 if adx is not None:
                     ind_parts.append(f"ADX={adx:.1f}")
+                    if plus_di is not None and minus_di is not None:
+                        ind_parts.append(f"+DI={plus_di:.1f}/-DI={minus_di:.1f}")
                 if atr is not None:
                     ind_parts.append(f"ATR={atr:.4f}")
                 if obv is not None:
@@ -3663,8 +3669,17 @@ class TradingEngine:
                     ind_parts.append(f"WR={williams_r:.2f}")
                 if ichimoku is not None:
                     ind_parts.append(f"Ichi T={ichimoku['tenkan_sen']:.2f}/K={ichimoku['kijun_sen']:.2f}")
+                    ind_parts.append(f"Cloud={ichimoku['cloud_bottom']:.2f}-{ichimoku['cloud_top']:.2f}")
                 if donchian_channels is not None:
-                    ind_parts.append(f"Donch={donchian_channels['lower']:.2f}-{donchian_channels['upper']:.2f}")
+                    ind_parts.append(f"Donch={donchian_channels['lower']:.2f}/{donchian_channels['middle']:.2f}/{donchian_channels['upper']:.2f}")
+                if vwap is not None:
+                    ind_parts.append(f"VWAP={vwap:.4f}")
+                if parabolic_sar is not None:
+                    ind_parts.append(f"SAR={parabolic_sar:.4f}")
+                if keltner_channels is not None:
+                    ind_parts.append(f"Kelt={keltner_channels['lower']:.4f}/{keltner_channels['middle']:.4f}/{keltner_channels['upper']:.4f}")
+                if pivot_points is not None:
+                    ind_parts.append(f"Pivot={pivot_points['pivot']:.4f} R1={pivot_points['r1']:.4f} S1={pivot_points['s1']:.4f}")
                 indicator_str = " | ".join(ind_parts) if ind_parts else ""
                 sentiment_str = self._get_sentiment_str(symbol)
                 msg = f"{emoji} {symbol}: {validated.action} (confidence: {validated.confidence:.2f}) – {validated.reasoning}"
