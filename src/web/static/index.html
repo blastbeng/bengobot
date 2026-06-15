@@ -735,10 +735,8 @@
                     unrealPnlCell.className = unrealPnl >= 0 ? 'green' : 'red';
                     totalUnrealizedPnl += unrealPnl;
                     totalValue += curPrice * entry.amount;
-                } else {
-                    curPriceCell.textContent = 'N/A';
-                    unrealPnlCell.textContent = 'N/A';
                 }
+                // If ticker data is missing, keep the previous values
             }
             // Update total row in tfoot
             const tfoot = document.querySelector('#positions-table tfoot');
