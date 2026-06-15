@@ -53,6 +53,28 @@ class Settings(BaseSettings):
             raise ValueError("COIN_SELECTION_TOP_VOLUME_LIMIT must be at least 1")
         return v
 
+    # Maximum number of consecutive "keep paused" LLM decisions before the engine
+    # force‑resumes trading with a reduced risk multiplier.
+    PAUSE_MAX_CONSECUTIVE_KEEP: int = 3
+
+    @field_validator("PAUSE_MAX_CONSECUTIVE_KEEP")
+    @classmethod
+    def validate_pause_max_consecutive_keep(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("PAUSE_MAX_CONSECUTIVE_KEEP must be at least 1")
+        return v
+
+    # Global risk multiplier applied when the engine force‑resumes after
+    # PAUSE_MAX_CONSECUTIVE_KEEP consecutive "keep paused" decisions.
+    PAUSE_FORCE_RESUME_RISK_MULTIPLIER: float = 0.3
+
+    @field_validator("PAUSE_FORCE_RESUME_RISK_MULTIPLIER")
+    @classmethod
+    def validate_pause_force_resume_risk_multiplier(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("PAUSE_FORCE_RESUME_RISK_MULTIPLIER must be between 0.0 and 1.0")
+        return v
+
     # Fallback coin selection: minimum 24h quote volume (in base currency) required
     # for a coin to be considered when the LLM returns no coins.
     # Set to 0 to disable the filter.
