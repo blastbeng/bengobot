@@ -340,7 +340,11 @@ class TradingEngine:
             # Try to get an LLM-generated summary of the news
             summary = ""
             try:
-                summary = get_cached_news_summary(symbol)
+                summary_raw = get_cached_news_summary(symbol)
+                if isinstance(summary_raw, dict):
+                    summary = summary_raw.get("summary", "")
+                else:
+                    summary = summary_raw
                 if summary in ("No recent news.", "Could not generate summary."):
                     summary = ""
             except Exception:
