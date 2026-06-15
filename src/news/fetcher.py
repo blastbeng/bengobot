@@ -991,7 +991,7 @@ def _fetch_rss(symbol: str) -> List[Dict[str, str]]:
 
 def test_rss_feeds():
     """Check each configured RSS feed and log whether it is reachable."""
-    logger.info(f"Testing {len(settings.RSS_FEEDS)} RSS feeds...")
+    logger.debug(f"Testing {len(settings.RSS_FEEDS)} RSS feeds...")
     for url in settings.RSS_FEEDS:
         try:
             resp = httpx.get(
@@ -1001,7 +1001,7 @@ def test_rss_feeds():
                 follow_redirects=True,
             )
             if resp.status_code == 200:
-                logger.info(f"RSS OK: {url}")
+                logger.debug(f"RSS OK: {url}")
             else:
                 logger.warning(f"RSS {url} returned {resp.status_code}")
         except Exception as e:
